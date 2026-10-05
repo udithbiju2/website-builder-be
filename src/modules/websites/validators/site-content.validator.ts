@@ -38,6 +38,28 @@ const link = Joi.object({
     .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
 });
 
+const subMenuItem = Joi.object({
+  label: text(80).required(),
+  href: text(2048)
+    .pattern(SAFE_HREF)
+    .required()
+    .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
+  description: optionalText(140),
+  badge: optionalText(30),
+  icon: optionalText(40),
+});
+
+const menuItem = Joi.object({
+  label: text(80).required(),
+  href: text(2048)
+    .pattern(SAFE_HREF)
+    .required()
+    .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
+  badge: optionalText(30),
+  icon: optionalText(40),
+  children: Joi.array().items(subMenuItem).max(24).optional(),
+});
+
 const image = Joi.object({
   url: text(2048)
     .pattern(SAFE_IMAGE_URL)
@@ -87,10 +109,20 @@ export const headerSchema = Joi.object({
     .required(),
   siteName: text(120).required(),
   logo: image.optional(),
-  menu: Joi.array().items(link).max(12).required(),
+  menu: Joi.array().items(menuItem).max(24).required(),
   cta: link.optional(),
+  secondaryCta: link.optional(),
   announcement: optionalText(200),
+  announcementLink: link.optional(),
+  position: Joi.string().valid("static", "sticky", "fixed", "floating").optional(),
   sticky: Joi.boolean().required(),
+  overlay: Joi.boolean().optional(),
+  showSearch: Joi.boolean().optional(),
+  showAccount: Joi.boolean().optional(),
+  showCart: Joi.boolean().optional(),
+  cartCount: Joi.number().integer().min(0).max(999).optional(),
+  currency: optionalText(10),
+  mobileMenuType: Joi.string().valid("drawer", "fullscreen", "dropdown").optional(),
   hidden: Joi.boolean().optional(),
 });
 
@@ -100,18 +132,42 @@ export const footerSchema = Joi.object({
     .required(),
   siteName: text(120).required(),
   logo: image.optional(),
+  tagline: optionalText(200),
   description: optionalText(500),
   columns: Joi.array()
     .items(Joi.object({ title: text(60).required(), links: Joi.array().items(link).max(12).required() }))
-    .max(4)
+    .max(6)
     .required(),
+  menu: Joi.array().items(link).max(12).optional(),
   contact: Joi.object({
+    title: optionalText(60),
     email: optionalText(255),
     phone: optionalText(32),
     address: optionalText(500),
+    hours: optionalText(200),
   }).optional(),
-  social: Joi.array().items(link).max(10).required(),
+  social: Joi.array().items(link).max(12).required(),
+  newsletter: Joi.object({
+    enabled: Joi.boolean().optional(),
+    title: optionalText(100),
+    description: optionalText(200),
+    placeholder: optionalText(100),
+    buttonText: optionalText(50),
+  }).optional(),
+  ctaBanner: Joi.object({
+    enabled: Joi.boolean().optional(),
+    heading: optionalText(200),
+    subheading: optionalText(500),
+    primaryCta: link.optional(),
+    secondaryCta: link.optional(),
+  }).optional(),
+  paymentMethods: Joi.object({
+    enabled: Joi.boolean().optional(),
+    methods: Joi.array().items(Joi.string().max(30)).max(10).optional(),
+  }).optional(),
+  legalLinks: Joi.array().items(link).max(6).optional(),
   copyright: text(200).allow("").required(),
+  themeMode: Joi.string().valid("dark", "light", "auto").optional(),
   hidden: Joi.boolean().optional(),
 });
 

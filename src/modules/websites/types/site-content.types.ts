@@ -11,8 +11,26 @@ export const BUTTON_STYLES = ["filled", "outline"] as const;
 export const CARD_STYLES = ["border", "shadow", "flat"] as const;
 export const RADIUS_SIZES = ["none", "sm", "md", "lg"] as const;
 export const SPACING_SIZES = ["compact", "normal", "relaxed"] as const;
-export const HEADER_DESIGNS = ["logo-left", "centered"] as const;
-export const FOOTER_DESIGNS = ["columns", "simple"] as const;
+export const HEADER_DESIGNS = [
+  "logo-left",
+  "centered",
+  "classical",
+  "minimalist",
+  "comprehensive",
+  "ecommerce",
+  "floating",
+  "transparent",
+] as const;
+export const FOOTER_DESIGNS = [
+  "columns",
+  "simple",
+  "mega",
+  "newsletter",
+  "split",
+  "inline",
+  "centered",
+  "cta-banner",
+] as const;
 export const SECTION_BACKGROUNDS = ["default", "surface", "primary", "dark"] as const;
 export const SECTION_SPACINGS = ["none", "compact", "default", "relaxed"] as const;
 export const SECTION_ALIGNMENTS = ["center", "left"] as const;
@@ -59,26 +77,88 @@ export type ThemeSettings = {
   sectionSpacing: (typeof SPACING_SIZES)[number];
 };
 
+export type HeaderSubMenuItem = {
+  label: string;
+  href: string;
+  description?: string;
+  badge?: string;
+  icon?: string;
+};
+
+export type HeaderMenuItem = {
+  label: string;
+  href: string;
+  badge?: string;
+  icon?: string;
+  children?: HeaderSubMenuItem[];
+};
+
 export type HeaderData = {
   design: (typeof HEADER_DESIGNS)[number];
   siteName: string;
   logo?: ImageRef;
-  menu: LinkRef[];
+  menu: HeaderMenuItem[];
   cta?: LinkRef;
+  secondaryCta?: LinkRef;
   announcement?: string;
+  announcementLink?: LinkRef;
+  position?: "static" | "sticky" | "fixed" | "floating";
   sticky: boolean;
+  overlay?: boolean;
+  showSearch?: boolean;
+  showAccount?: boolean;
+  showCart?: boolean;
+  cartCount?: number;
+  currency?: string;
+  mobileMenuType?: "drawer" | "fullscreen" | "dropdown";
   hidden?: boolean;
+};
+
+export type FooterNewsletter = {
+  enabled?: boolean;
+  title?: string;
+  description?: string;
+  placeholder?: string;
+  buttonText?: string;
+};
+
+export type FooterCtaBanner = {
+  enabled?: boolean;
+  heading?: string;
+  subheading?: string;
+  primaryCta?: LinkRef;
+  secondaryCta?: LinkRef;
+};
+
+export type FooterPaymentMethods = {
+  enabled?: boolean;
+  methods?: string[];
+};
+
+export type FooterContact = {
+  title?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  hours?: string;
 };
 
 export type FooterData = {
   design: (typeof FOOTER_DESIGNS)[number];
   siteName: string;
   logo?: ImageRef;
+  tagline?: string;
   description?: string;
   columns: { title: string; links: LinkRef[] }[];
-  contact?: { email?: string; phone?: string; address?: string };
+  menu?: LinkRef[];
+  contact?: FooterContact;
   social: LinkRef[];
+  newsletter?: FooterNewsletter;
+  ctaBanner?: FooterCtaBanner;
+  paymentMethods?: FooterPaymentMethods;
+  legalLinks?: LinkRef[];
   copyright: string;
+  themeMode?: "dark" | "light" | "auto";
   hidden?: boolean;
 };
 
