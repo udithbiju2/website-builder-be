@@ -4,10 +4,17 @@ model Client {
   businessName String       @db.VarChar(160)
   address      String?      @db.VarChar(500)
   source       ClientSource
+  /// When false, client users can edit but only a Super Admin can publish.
+  canPublish   Boolean      @default(true)
   createdAt    DateTime     @default(now()) @db.Timestamptz(6)
   updatedAt    DateTime     @updatedAt @db.Timestamptz(6)
 
-  users User[]
+  users         User[]
+  websites      Website[]
+  mediaFolders  MediaFolder[]
+  mediaFiles    MediaFile[]
+  savedSections SavedSection[]
+  templates     WebsiteTemplate[]
 
   @@map("clients")
 }

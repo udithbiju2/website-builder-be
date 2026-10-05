@@ -1,0 +1,22 @@
+/// Immutable snapshot of a website taken at publish time (full site-kit SiteData).
+/// The website's live pointer only moves to a version once it SUCCEEDED, so a
+/// failed publish keeps the previous version online.
+model WebsiteVersion {
+  id            String        @id @default(uuid()) @db.Uuid
+  websiteId     String        @db.Uuid
+  /// 1, 2, 3 ... per website.
+  version       Int
+  status        PublishStatus @default(PENDING)
+  snapshot      Json
+  errorMessage  String?       @db.VarChar(1000)
+  publishedById String?       @db.Uuid
+  createdAt     DateTime      @default(now()) @db.Timestamptz(6)
+  completedAt   DateTime?     @db.Timestamptz(6)
+
+  website     Website  @relation("WebsiteVersions", fields: [websiteId], references: [id], onDelete: Cascade)
+  liveFor     Website? @relation("WebsiteLiveVersion")
+  publishedBy User?    @relation("VersionPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([websiteId, version])
+  @@map("website_versions")
+}

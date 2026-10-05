@@ -1,0 +1,85 @@
+// Super Admin design library. Header/footer designs and section types are
+// code-defined (site-kit registry); these tables hold reusable configurations.
+
+/// Named site-kit ThemeSettings preset.
+model Theme {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(80)
+  settings  Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  websiteTemplates WebsiteTemplate[]
+
+  @@map("themes")
+}
+
+/// Starting point for a new website: theme + header/footer + pages with sections.
+/// Copied into the website on creation, never referenced afterwards.
+/// clientId null = platform template (Super Admin); otherwise private to that client.
+model WebsiteTemplate {
+  id            String   @id @default(uuid()) @db.Uuid
+  key           String   @unique @db.VarChar(80)
+  clientId      String?  @db.Uuid
+  name          String   @db.VarChar(120)
+  category      String   @db.VarChar(60)
+  description   String?  @db.VarChar(500)
+  thumbnailUrl  String?  @db.VarChar(2048)
+  themeId       String?  @db.Uuid
+  /// Full ThemeSettings for client templates (their colours may not match any preset).
+  themeSettings Json?
+  header        Json
+  footer        Json
+  /// Ordered [{ name, slug, pageType, sections }].
+  pages         Json
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdById   String?  @db.Uuid
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+
+  theme     Theme?  @relation(fields: [themeId], references: [id], onDelete: SetNull)
+  client    Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("WebsiteTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([isActive, sortOrder])
+  @@index([clientId])
+  @@map("website_templates")
+}
+
+/// Starting section layout for a single page type (e.g. "About · Story + Team").
+model PageTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique @db.VarChar(80)
+  name      String   @db.VarChar(120)
+  pageType  PageType
+  sections  Json     @default("[]")
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([pageType, isActive])
+  @@map("page_templates")
+}
+
+/// A section saved for reuse. clientId null = platform-wide (Super Admin);
+/// otherwise visible only inside that client's workspace.
+model SavedSection {
+  id          String   @id @default(uuid()) @db.Uuid
+  clientId    String?  @db.Uuid
+  name        String   @db.VarChar(120)
+  /// site-kit section type, duplicated out of `section` for filtering.
+  sectionType String   @db.VarChar(40)
+  section     Json
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  client    Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("SavedSectionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([clientId, sectionType])
+  @@map("saved_sections")
+}

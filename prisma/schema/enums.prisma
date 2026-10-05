@@ -13,3 +13,45 @@ enum ClientSource {
   SELF_SIGNUP
   ADMIN_CREATED
 }
+
+enum BuilderType {
+  MANUAL
+  AI
+}
+
+enum WebsiteStatus {
+  /// Never published.
+  DRAFT
+  /// Has a live version online.
+  PUBLISHED
+  /// Was published, then taken offline; versions are kept.
+  UNPUBLISHED
+}
+
+enum PageType {
+  HOME
+  ABOUT
+  SERVICES
+  CONTACT
+  BLOG
+  LANDING
+  CUSTOM
+}
+
+enum PublishStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum DomainStatus {
+  PENDING_DNS
+  ACTIVE
+  FAILED
+}
+
+enum MediaKind {
+  IMAGE
+  VIDEO
+  DOCUMENT
+}

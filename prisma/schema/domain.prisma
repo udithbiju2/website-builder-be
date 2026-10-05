@@ -1,0 +1,25 @@
+/// Custom domain pointed at a website. The default <subdomain>.<platform domain>
+/// address lives on Website.subdomain and needs no row here.
+model Domain {
+  id                String       @id @default(uuid()) @db.Uuid
+  websiteId         String       @db.Uuid
+  clientId          String       @db.Uuid
+  /// Lowercase, no scheme/port/path, e.g. "www.clienta.com".
+  hostname          String       @unique @db.VarChar(253)
+  isPrimary         Boolean      @default(false)
+  status            DomainStatus @default(PENDING_DNS)
+  /// Value the client publishes in a TXT record to prove ownership.
+  verificationToken String       @db.VarChar(64)
+  verifiedAt        DateTime?    @db.Timestamptz(6)
+  lastCheckedAt     DateTime?    @db.Timestamptz(6)
+  lastError         String?      @db.VarChar(500)
+  createdAt         DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime     @updatedAt @db.Timestamptz(6)
+
+  website Website @relation(fields: [websiteId, clientId], references: [id, clientId], onDelete: Cascade)
+
+  @@index([websiteId])
+  @@index([clientId])
+  @@index([status])
+  @@map("domains")
+}
