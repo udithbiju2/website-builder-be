@@ -13,7 +13,9 @@ export const RADIUS_SIZES = ["none", "sm", "md", "lg"] as const;
 export const SPACING_SIZES = ["compact", "normal", "relaxed"] as const;
 export const HEADER_DESIGNS = ["logo-left", "centered"] as const;
 export const FOOTER_DESIGNS = ["columns", "simple"] as const;
-export const SECTION_BACKGROUNDS = ["default", "surface", "primary"] as const;
+export const SECTION_BACKGROUNDS = ["default", "surface", "primary", "dark"] as const;
+export const SECTION_SPACINGS = ["none", "compact", "default", "relaxed"] as const;
+export const SECTION_ALIGNMENTS = ["center", "left"] as const;
 export const ICON_NAMES = ["check", "star", "bolt", "shield", "heart", "chat"] as const;
 export const SECTION_TYPES = [
   "hero",
@@ -25,6 +27,12 @@ export const SECTION_TYPES = [
   "contact",
   "text",
   "gallery",
+  "logos",
+  "split",
+  "stats",
+  "pricing",
+  "media",
+  "team",
 ] as const;
 
 export type FontKey = (typeof FONT_KEYS)[number];
@@ -73,6 +81,11 @@ export type FooterData = {
 export type SectionSettings = {
   background: (typeof SECTION_BACKGROUNDS)[number];
   hideOnMobile: boolean;
+  hideOnDesktop?: boolean;
+  spacing?: (typeof SECTION_SPACINGS)[number];
+  align?: (typeof SECTION_ALIGNMENTS)[number];
+  /** In-page anchor (`#pricing`); lowercase words and hyphens only. */
+  anchor?: string;
 };
 
 export type SectionDataMap = {
@@ -124,6 +137,47 @@ export type SectionDataMap = {
     columns: GridColumns;
     mobileColumns: GridColumns;
     images: ImageRef[];
+  };
+  logos: { heading?: string; grayscale: boolean; logos: ImageRef[] };
+  split: {
+    eyebrow?: string;
+    heading: string;
+    body: string;
+    bullets: string[];
+    image?: ImageRef;
+    imagePosition: "left" | "right";
+    cta?: LinkRef;
+  };
+  stats: { heading?: string; intro?: string; items: { value: string; label: string }[] };
+  pricing: {
+    heading: string;
+    intro?: string;
+    plans: {
+      name: string;
+      price: string;
+      period?: string;
+      description?: string;
+      features: string[];
+      cta?: LinkRef;
+      featured: boolean;
+    }[];
+  };
+  media: {
+    heading?: string;
+    caption?: string;
+    kind: "image" | "video";
+    image?: ImageRef;
+    /** YouTube or Vimeo page URL; rendered only as a privacy-enhanced embed. */
+    videoUrl?: string;
+    aspect: "16:9" | "4:3" | "1:1";
+    width: "contained" | "wide";
+  };
+  team: {
+    heading: string;
+    intro?: string;
+    columns: GridColumns;
+    mobileColumns: GridColumns;
+    members: { name: string; role?: string; bio?: string; photo?: ImageRef; link?: LinkRef }[];
   };
 };
 

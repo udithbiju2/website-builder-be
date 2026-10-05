@@ -7,7 +7,9 @@ import {
   HEADER_DESIGNS,
   ICON_NAMES,
   RADIUS_SIZES,
+  SECTION_ALIGNMENTS,
   SECTION_BACKGROUNDS,
+  SECTION_SPACINGS,
   SECTION_TYPES,
   SPACING_SIZES,
   type SectionType,
@@ -20,6 +22,10 @@ import {
 const SAFE_HREF = /^(https?:\/\/\S+|mailto:\S+|tel:[+0-9() -]+|\/(?!\/)\S*|#\S*)$/i;
 const SAFE_IMAGE_URL = /^(https?:\/\/\S+|\/(?!\/)\S*)$/i;
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+/** Only these hosts are embedded, and only via an iframe src the renderer builds itself. */
+export const SAFE_VIDEO_URL =
+  /^https:\/\/(?:(?:www\.|m\.)?youtube\.com\/watch\?v=[\w-]{6,20}(?:&\S*)?|youtu\.be\/[\w-]{6,20}(?:\?\S*)?|(?:www\.)?vimeo\.com\/\d{6,12}(?:\?\S*)?)$/i;
+const ANCHOR = /^[a-z][a-z0-9-]{0,39}$/;
 
 const text = (max: number) => Joi.string().trim().max(max);
 const optionalText = (max: number) => text(max).allow("").optional();
@@ -191,6 +197,77 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     mobileColumns: columns.required(),
     images: Joi.array().items(image).max(48).required(),
   }),
+  logos: Joi.object({
+    heading: optionalText(200),
+    grayscale: Joi.boolean().required(),
+    logos: Joi.array().items(image).max(24).required(),
+  }),
+  split: Joi.object({
+    eyebrow: optionalText(200),
+    heading: text(200).required(),
+    body: text(4000).allow("").required(),
+    bullets: Joi.array().items(text(200)).max(8).required(),
+    image: image.optional(),
+    imagePosition: Joi.string().valid("left", "right").required(),
+    cta: link.optional(),
+  }),
+  stats: Joi.object({
+    heading: optionalText(200),
+    intro: optionalText(500),
+    items: Joi.array()
+      .items(Joi.object({ value: text(20).required(), label: text(80).required() }))
+      .max(8)
+      .required(),
+  }),
+  pricing: Joi.object({
+    heading: text(200).required(),
+    intro: optionalText(500),
+    plans: Joi.array()
+      .items(
+        Joi.object({
+          name: text(60).required(),
+          price: text(20).required(),
+          period: optionalText(20),
+          description: optionalText(300),
+          features: Joi.array().items(text(160)).max(12).required(),
+          cta: link.optional(),
+          featured: Joi.boolean().required(),
+        }),
+      )
+      .max(4)
+      .required(),
+  }),
+  media: Joi.object({
+    heading: optionalText(200),
+    caption: optionalText(300),
+    kind: Joi.string().valid("image", "video").required(),
+    image: image.optional(),
+    videoUrl: text(2048)
+      .pattern(SAFE_VIDEO_URL)
+      .allow("")
+      .optional()
+      .messages({ "string.pattern.base": "Use a YouTube or Vimeo video link" }),
+    aspect: Joi.string().valid("16:9", "4:3", "1:1").required(),
+    width: Joi.string().valid("contained", "wide").required(),
+  }),
+  team: Joi.object({
+    heading: text(200).required(),
+    intro: optionalText(500),
+    columns: columns.required(),
+    mobileColumns: columns.required(),
+    members: Joi.array()
+      .items(
+        Joi.object({
+          name: text(120).required(),
+          role: optionalText(120),
+          bio: optionalText(600),
+          photo: image.optional(),
+          link: link.optional(),
+        }),
+      )
+      .max(24)
+      .required(),
+  }),
 };
 
 export const sectionSchema = Joi.object({
@@ -204,6 +281,18 @@ export const sectionSchema = Joi.object({
       .valid(...SECTION_BACKGROUNDS)
       .required(),
     hideOnMobile: Joi.boolean().required(),
+    hideOnDesktop: Joi.boolean().optional(),
+    spacing: Joi.string()
+      .valid(...SECTION_SPACINGS)
+      .optional(),
+    align: Joi.string()
+      .valid(...SECTION_ALIGNMENTS)
+      .optional(),
+    anchor: Joi.string()
+      .pattern(ANCHOR)
+      .allow("")
+      .optional()
+      .messages({ "string.pattern.base": "Anchors use lowercase letters, numbers and hyphens" }),
   }).required(),
   data: Joi.when("type", {
     switch: SECTION_TYPES.map((type) => ({ is: type, then: SECTION_DATA[type].required() })),

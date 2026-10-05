@@ -83,7 +83,7 @@ export type CreateWebsiteInput = WebsiteInfoInput & {
 export type UpdateWebsiteInput = WebsiteInfoInput & { name?: string };
 
 export type PageInput = {
-  /** Existing page id to keep; unknown ids are treated as new pages. */
+  /** Page id; omitted ids get a new UUID, new client-generated UUIDs are kept. */
   id?: string;
   name: string;
   slug: string;
@@ -101,6 +101,33 @@ export type SaveDraftInput = {
   header: HeaderData;
   footer: FooterData;
   pages: PageInput[];
+};
+
+export type SavePageContentInput = {
+  expectedDraftUpdatedAt: string;
+  schemaVersion: number;
+  sections: Section[];
+};
+
+export type PublishInput = { expectedDraftUpdatedAt: string };
+
+/** Immutable content of a published version: everything visitors see, nothing editor-only. */
+export type PublishSnapshot = {
+  schemaVersion: number;
+  theme: ThemeSettings;
+  header: HeaderData;
+  footer: FooterData;
+  pages: Pick<PageView, "id" | "name" | "slug" | "pageType" | "showInNav" | "seoTitle" | "seoDescription" | "sections">[];
+};
+
+export type WebsiteVersionView = {
+  id: string;
+  version: number;
+  status: "PENDING" | "SUCCEEDED" | "FAILED";
+  isLive: boolean;
+  publishedByName: string | null;
+  createdAt: string;
+  completedAt: string | null;
 };
 
 export type TemplateListQuery = {
