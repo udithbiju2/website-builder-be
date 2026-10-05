@@ -8,7 +8,10 @@ import {
   createWebsiteSchema,
   listTemplatesQuerySchema,
   listWebsitesQuerySchema,
+  pageContentParamsSchema,
+  publishSchema,
   saveDraftSchema,
+  savePageContentSchema,
   savedSectionParamsSchema,
   saveSectionSchema,
   saveTemplateSchema,
@@ -39,6 +42,21 @@ websitesRouter.post(
 websitesRouter.get("/:id", byId, websiteController.get);
 websitesRouter.patch("/:id", byId, validate(updateWebsiteSchema), websiteController.update);
 websitesRouter.put("/:id/draft", byId, validate(saveDraftSchema), websiteController.saveDraft);
+websitesRouter.put(
+  "/:id/pages/:pageId/content",
+  validate(pageContentParamsSchema, "params"),
+  rateLimit({ name: "page-autosave", max: 240, windowSeconds: 60 }),
+  validate(savePageContentSchema),
+  websiteController.savePageContent,
+);
+websitesRouter.post(
+  "/:id/publish",
+  byId,
+  rateLimit({ name: "website-publish", max: 30, windowSeconds: 60 * 60 }),
+  validate(publishSchema),
+  websiteController.publish,
+);
+websitesRouter.get("/:id/versions", byId, websiteController.listVersions);
 websitesRouter.post(
   "/:id/templates",
   byId,

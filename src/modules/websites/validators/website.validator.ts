@@ -107,6 +107,26 @@ const pageSchema = Joi.object({
   sections: sectionsSchema.required(),
 });
 
+export const pageContentParamsSchema = Joi.object({
+  id: Joi.string().guid().required(),
+  pageId: Joi.string().guid().required(),
+});
+
+/** Current editor document format; bump with a migration when the stored shape changes. */
+export const EDITOR_SCHEMA_VERSION = 1;
+
+/** Autosave of one page's sections. Page structure, theme, header and footer go through saveDraft. */
+export const savePageContentSchema = Joi.object({
+  expectedDraftUpdatedAt: Joi.string().isoDate().required(),
+  schemaVersion: Joi.number().valid(EDITOR_SCHEMA_VERSION).required(),
+  sections: sectionsSchema.required(),
+});
+
+/** Publishing requires the draft the user is looking at, so a stale tab can't publish older content. */
+export const publishSchema = Joi.object({
+  expectedDraftUpdatedAt: Joi.string().isoDate().required(),
+});
+
 export const saveDraftSchema = Joi.object({
   expectedDraftUpdatedAt: Joi.string().isoDate().required(),
   theme: themeSchema.required(),

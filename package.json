@@ -8,6 +8,7 @@
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "typecheck": "prisma generate && tsc --noEmit",
+    "test": "tsx --test src/modules/*/*/*.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

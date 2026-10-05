@@ -5,9 +5,12 @@ import {
   FONT_KEYS,
   FOOTER_DESIGNS,
   HEADER_DESIGNS,
+  HERO_VARIANTS,
   ICON_NAMES,
   RADIUS_SIZES,
+  SECTION_ALIGNMENTS,
   SECTION_BACKGROUNDS,
+  SECTION_SPACINGS,
   SECTION_TYPES,
   SPACING_SIZES,
   type SectionType,
@@ -20,6 +23,10 @@ import {
 const SAFE_HREF = /^(https?:\/\/\S+|mailto:\S+|tel:[+0-9() -]+|\/(?!\/)\S*|#\S*)$/i;
 const SAFE_IMAGE_URL = /^(https?:\/\/\S+|\/(?!\/)\S*)$/i;
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+/** Only these hosts are embedded, and only via an iframe src the renderer builds itself. */
+export const SAFE_VIDEO_URL =
+  /^https:\/\/(?:(?:www\.|m\.)?youtube\.com\/watch\?v=[\w-]{6,20}(?:&\S*)?|youtu\.be\/[\w-]{6,20}(?:\?\S*)?|(?:www\.)?vimeo\.com\/\d{6,12}(?:\?\S*)?)$/i;
+const ANCHOR = /^[a-z][a-z0-9-]{0,39}$/;
 
 const text = (max: number) => Joi.string().trim().max(max);
 const optionalText = (max: number) => text(max).allow("").optional();
@@ -30,6 +37,28 @@ const link = Joi.object({
     .pattern(SAFE_HREF)
     .required()
     .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
+});
+
+const subMenuItem = Joi.object({
+  label: text(80).required(),
+  href: text(2048)
+    .pattern(SAFE_HREF)
+    .required()
+    .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
+  description: optionalText(140),
+  badge: optionalText(30),
+  icon: optionalText(40),
+});
+
+const menuItem = Joi.object({
+  label: text(80).required(),
+  href: text(2048)
+    .pattern(SAFE_HREF)
+    .required()
+    .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
+  badge: optionalText(30),
+  icon: optionalText(40),
+  children: Joi.array().items(subMenuItem).max(24).optional(),
 });
 
 const image = Joi.object({
@@ -81,10 +110,21 @@ export const headerSchema = Joi.object({
     .required(),
   siteName: text(120).required(),
   logo: image.optional(),
-  menu: Joi.array().items(link).max(12).required(),
+  menu: Joi.array().items(menuItem).max(24).required(),
   cta: link.optional(),
+  secondaryCta: link.optional(),
   announcement: optionalText(200),
+  announcementLink: link.optional(),
+  position: Joi.string().valid("static", "sticky", "fixed", "floating").optional(),
   sticky: Joi.boolean().required(),
+  overlay: Joi.boolean().optional(),
+  showSearch: Joi.boolean().optional(),
+  showAccount: Joi.boolean().optional(),
+  showCart: Joi.boolean().optional(),
+  cartCount: Joi.number().integer().min(0).max(999).optional(),
+  currency: optionalText(10),
+  mobileMenuType: Joi.string().valid("drawer", "fullscreen", "dropdown").optional(),
+  hidden: Joi.boolean().optional(),
 });
 
 export const footerSchema = Joi.object({
@@ -93,30 +133,111 @@ export const footerSchema = Joi.object({
     .required(),
   siteName: text(120).required(),
   logo: image.optional(),
+  tagline: optionalText(200),
   description: optionalText(500),
   columns: Joi.array()
     .items(Joi.object({ title: text(60).required(), links: Joi.array().items(link).max(12).required() }))
-    .max(4)
+    .max(6)
     .required(),
+  menu: Joi.array().items(link).max(12).optional(),
   contact: Joi.object({
+    title: optionalText(60),
     email: optionalText(255),
     phone: optionalText(32),
     address: optionalText(500),
+    hours: optionalText(200),
   }).optional(),
-  social: Joi.array().items(link).max(10).required(),
-  copyright: text(200).allow("").required(),
-});
-
-const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
-  hero: Joi.object({
-    variant: Joi.string().valid("centered", "split").required(),
-    eyebrow: optionalText(200),
-    heading: text(200).required(),
+  social: Joi.array().items(link).max(12).required(),
+  newsletter: Joi.object({
+    enabled: Joi.boolean().optional(),
+    title: optionalText(100),
+    description: optionalText(200),
+    placeholder: optionalText(100),
+    buttonText: optionalText(50),
+  }).optional(),
+  ctaBanner: Joi.object({
+    enabled: Joi.boolean().optional(),
+    heading: optionalText(200),
     subheading: optionalText(500),
     primaryCta: link.optional(),
     secondaryCta: link.optional(),
-    image: image.optional(),
-  }),
+  }).optional(),
+  paymentMethods: Joi.object({
+    enabled: Joi.boolean().optional(),
+    methods: Joi.array().items(Joi.string().max(30)).max(10).optional(),
+  }).optional(),
+  legalLinks: Joi.array().items(link).max(6).optional(),
+  copyright: text(200).allow("").required(),
+  themeMode: Joi.string().valid("dark", "light", "auto").optional(),
+  hidden: Joi.boolean().optional(),
+});
+
+export const heroSchema = Joi.object({
+  variant: Joi.string()
+    .valid(...HERO_VARIANTS)
+    .required(),
+  eyebrow: optionalText(200),
+  badgeIcon: optionalText(50),
+  heading: optionalText(200),
+  highlightText: optionalText(100),
+  subheading: optionalText(500),
+  description: optionalText(1000),
+  primaryCta: link.optional(),
+  secondaryCta: link.optional(),
+  tertiaryCta: link.optional(),
+  buttons: Joi.array().items(link).max(6).optional(),
+  mediaType: Joi.string().valid("image", "video", "both").optional(),
+  videoUrl: optionalText(500),
+  videoAutoplay: Joi.boolean().optional(),
+  videoControls: Joi.boolean().optional(),
+  videoLoop: Joi.boolean().optional(),
+  image: image.optional(),
+  secondaryImage: image.optional(),
+  backgroundImage: image.optional(),
+  bgImagePosition: Joi.string().valid("bottom", "center", "top", "cover").optional(),
+  bgOverlayType: Joi.string().valid("dark", "light", "gradient", "none").optional(),
+  backgroundVideoUrl: optionalText(500),
+  imagePosition: Joi.string().valid("right", "left", "bottom", "background", "card").optional(),
+  imageStyle: Joi.string().valid("mockup", "rounded", "glow", "shadow", "plain").optional(),
+  overlayOpacity: Joi.number().min(0).max(100).optional(),
+  overlayBlur: Joi.boolean().optional(),
+  minHeight: Joi.string().valid("auto", "compact", "screen", "tall").optional(),
+  contentAlign: Joi.string().valid("center", "left", "right").optional(),
+  bottomShape: Joi.string().valid("none", "wave", "curve", "slant", "tilt").optional(),
+  rating: Joi.object({
+    stars: Joi.number().min(1).max(5).optional(),
+    text: optionalText(200),
+    avatarCount: Joi.number().min(1).max(10).optional(),
+  }).optional(),
+  floatingCards: Joi.array()
+    .items(
+      Joi.object({
+        title: text(60).required(),
+        subtitle: optionalText(100),
+        badge: optionalText(30),
+        icon: optionalText(50),
+      })
+    )
+    .max(4)
+    .optional(),
+  trustedBy: Joi.object({
+    label: optionalText(100),
+    logos: Joi.array()
+      .items(
+        Joi.object({
+          label: text(60).required(),
+          url: optionalText(500),
+        })
+      )
+      .max(8)
+      .optional(),
+  }).optional(),
+});
+
+const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
+  header: headerSchema,
+  footer: footerSchema,
+  hero: heroSchema,
   features: Joi.object({
     heading: text(200).required(),
     intro: optionalText(500),
@@ -191,6 +312,77 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     mobileColumns: columns.required(),
     images: Joi.array().items(image).max(48).required(),
   }),
+  logos: Joi.object({
+    heading: optionalText(200),
+    grayscale: Joi.boolean().required(),
+    logos: Joi.array().items(image).max(24).required(),
+  }),
+  split: Joi.object({
+    eyebrow: optionalText(200),
+    heading: text(200).required(),
+    body: text(4000).allow("").required(),
+    bullets: Joi.array().items(text(200)).max(8).required(),
+    image: image.optional(),
+    imagePosition: Joi.string().valid("left", "right").required(),
+    cta: link.optional(),
+  }),
+  stats: Joi.object({
+    heading: optionalText(200),
+    intro: optionalText(500),
+    items: Joi.array()
+      .items(Joi.object({ value: text(20).required(), label: text(80).required() }))
+      .max(8)
+      .required(),
+  }),
+  pricing: Joi.object({
+    heading: text(200).required(),
+    intro: optionalText(500),
+    plans: Joi.array()
+      .items(
+        Joi.object({
+          name: text(60).required(),
+          price: text(20).required(),
+          period: optionalText(20),
+          description: optionalText(300),
+          features: Joi.array().items(text(160)).max(12).required(),
+          cta: link.optional(),
+          featured: Joi.boolean().required(),
+        }),
+      )
+      .max(4)
+      .required(),
+  }),
+  media: Joi.object({
+    heading: optionalText(200),
+    caption: optionalText(300),
+    kind: Joi.string().valid("image", "video").required(),
+    image: image.optional(),
+    videoUrl: text(2048)
+      .pattern(SAFE_VIDEO_URL)
+      .allow("")
+      .optional()
+      .messages({ "string.pattern.base": "Use a YouTube or Vimeo video link" }),
+    aspect: Joi.string().valid("16:9", "4:3", "1:1").required(),
+    width: Joi.string().valid("contained", "wide").required(),
+  }),
+  team: Joi.object({
+    heading: text(200).required(),
+    intro: optionalText(500),
+    columns: columns.required(),
+    mobileColumns: columns.required(),
+    members: Joi.array()
+      .items(
+        Joi.object({
+          name: text(120).required(),
+          role: optionalText(120),
+          bio: optionalText(600),
+          photo: image.optional(),
+          link: link.optional(),
+        }),
+      )
+      .max(24)
+      .required(),
+  }),
 };
 
 export const sectionSchema = Joi.object({
@@ -204,6 +396,25 @@ export const sectionSchema = Joi.object({
       .valid(...SECTION_BACKGROUNDS)
       .required(),
     hideOnMobile: Joi.boolean().required(),
+    hideOnDesktop: Joi.boolean().optional(),
+    spacing: Joi.string()
+      .valid(...SECTION_SPACINGS)
+      .optional(),
+    align: Joi.string()
+      .valid(...SECTION_ALIGNMENTS)
+      .optional(),
+    anchor: Joi.string()
+      .pattern(ANCHOR)
+      .allow("")
+      .optional()
+      .messages({ "string.pattern.base": "Anchors use lowercase letters, numbers and hyphens" }),
+    customColors: Joi.object({
+      background: color.optional(),
+      text: color.optional(),
+      primary: color.optional(),
+      muted: color.optional(),
+      border: color.optional(),
+    }).optional(),
   }).required(),
   data: Joi.when("type", {
     switch: SECTION_TYPES.map((type) => ({ is: type, then: SECTION_DATA[type].required() })),

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { UserRole } from "../../../common/constants/roles.js";
-import { BuilderType, PageType } from "../../../common/constants/website.js";
+import { BuilderType, PageType, PublishStatus, WebsiteStatus } from "../../../common/constants/website.js";
 import { AppError } from "../../../common/errors/AppError.js";
 import type { AuthUser } from "../../../common/middleware/authenticate.js";
 import { logger } from "../../../config/logger.js";
@@ -12,8 +12,10 @@ import type { TemplateFooter, TemplateHeader, TemplatePage } from "../types/temp
 import type {
   CreateWebsiteInput,
   PageView,
+  PublishInput,
   SaveDraftInput,
   SavedSectionView,
+  SavePageContentInput,
   SaveSectionInput,
   SaveTemplateInput,
   TemplateListQuery,
@@ -26,8 +28,10 @@ import type {
   WebsiteListResult,
   WebsiteSummary,
   WebsiteTemplateSummary,
+  WebsiteVersionView,
 } from "../types/website.types.js";
 import { SUBDOMAIN_PATTERN } from "../validators/website.validator.js";
+import { buildPublishSnapshot } from "./publish-snapshot.js";
 
 const summaryInclude = {
   client: { select: { businessName: true } },
@@ -84,6 +88,7 @@ const NOT_FOUND = () => new AppError(404, "Website not found", "WEBSITE_NOT_FOUN
 const SUBDOMAIN_TAKEN = () => new AppError(409, "This address is already taken.", "SUBDOMAIN_TAKEN");
 const DRAFT_CONFLICT = () =>
   new AppError(409, "This website was changed somewhere else. Reload to get the latest draft.", "DRAFT_CONFLICT");
+const PAGE_NOT_FOUND = () => new AppError(404, "Page not found", "PAGE_NOT_FOUND");
 
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -516,45 +521,163 @@ export class WebsiteService {
       throw DRAFT_CONFLICT();
     }
 
-    // Only ids that already belong to this website are kept; anything else becomes a new page.
+    // A client-generated UUID is kept for new pages so the editor's page ids stay stable across
+    // autosaves. An id owned by another website fails the primary key and rolls back the save.
     const existingPages = new Map(website.pages.map((page) => [page.id, page.createdAt]));
 
+    try {
+      await prisma.$transaction(async (tx) => {
+        const claimed = await tx.website.updateMany({
+          where: { id: website.id, draftUpdatedAt: website.draftUpdatedAt },
+          data: {
+            theme: input.theme as Prisma.InputJsonValue,
+            header: input.header as Prisma.InputJsonValue,
+            footer: input.footer as Prisma.InputJsonValue,
+            draftUpdatedAt: new Date(),
+          },
+        });
+        if (claimed.count === 0) throw DRAFT_CONFLICT();
+
+        await tx.page.deleteMany({ where: { websiteId: website.id } });
+        await tx.page.createMany({
+          data: input.pages.map((page, index) => {
+            const createdAt = page.id === undefined ? undefined : existingPages.get(page.id);
+            return {
+              id: page.id ?? randomUUID(),
+              websiteId: website.id,
+              clientId: website.clientId,
+              name: page.name,
+              slug: page.slug,
+              pageType: page.pageType,
+              visible: page.visible,
+              showInNav: page.showInNav,
+              seoTitle: emptyToNull(page.seoTitle),
+              seoDescription: emptyToNull(page.seoDescription),
+              sortOrder: index,
+              sections: page.sections as unknown as Prisma.InputJsonValue,
+              ...(createdAt ? { createdAt } : {}),
+            };
+          }),
+        });
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new AppError(409, "A page id is already in use. Reload the editor.", "PAGE_ID_TAKEN");
+      throw error;
+    }
+
+    return this.get(id, actor);
+  }
+
+  /**
+   * Autosave path: replaces one page's sections. Uses the same optimistic
+   * concurrency token as saveDraft, so both paths can't overwrite each other.
+   */
+  async savePageContent(
+    id: string,
+    pageId: string,
+    input: SavePageContentInput,
+    actor: AuthUser,
+  ): Promise<{ draftUpdatedAt: string }> {
+    const website = await prisma.website.findFirst({
+      where: { id, ...scopeFor(actor) },
+      select: { id: true, draftUpdatedAt: true },
+    });
+    if (!website) throw NOT_FOUND();
+    if (new Date(input.expectedDraftUpdatedAt).getTime() !== website.draftUpdatedAt.getTime()) {
+      throw DRAFT_CONFLICT();
+    }
+
+    const draftUpdatedAt = new Date();
     await prisma.$transaction(async (tx) => {
       const claimed = await tx.website.updateMany({
         where: { id: website.id, draftUpdatedAt: website.draftUpdatedAt },
-        data: {
-          theme: input.theme as Prisma.InputJsonValue,
-          header: input.header as Prisma.InputJsonValue,
-          footer: input.footer as Prisma.InputJsonValue,
-          draftUpdatedAt: new Date(),
-        },
+        data: { draftUpdatedAt },
       });
       if (claimed.count === 0) throw DRAFT_CONFLICT();
 
-      await tx.page.deleteMany({ where: { websiteId: website.id } });
-      await tx.page.createMany({
-        data: input.pages.map((page, index) => {
-          const keep = page.id !== undefined && existingPages.has(page.id);
-          return {
-            id: keep ? page.id : randomUUID(),
-            websiteId: website.id,
-            clientId: website.clientId,
-            name: page.name,
-            slug: page.slug,
-            pageType: page.pageType,
-            visible: page.visible,
-            showInNav: page.showInNav,
-            seoTitle: emptyToNull(page.seoTitle),
-            seoDescription: emptyToNull(page.seoDescription),
-            sortOrder: index,
-            sections: page.sections as unknown as Prisma.InputJsonValue,
-            ...(keep ? { createdAt: existingPages.get(page.id!) } : {}),
-          };
-        }),
+      const updated = await tx.page.updateMany({
+        where: { id: pageId, websiteId: website.id },
+        data: { sections: input.sections as unknown as Prisma.InputJsonValue },
       });
+      if (updated.count === 0) throw PAGE_NOT_FOUND();
     });
 
+    return { draftUpdatedAt: draftUpdatedAt.toISOString() };
+  }
+
+  /**
+   * Snapshots the current draft into a new immutable version and points the
+   * live site at it. The draft itself is never modified by publishing.
+   */
+  async publish(id: string, input: PublishInput, actor: AuthUser): Promise<WebsiteDetail> {
+    const website = await prisma.website.findFirst({ where: { id, ...scopeFor(actor) }, include: detailInclude });
+    if (!website) throw NOT_FOUND();
+    if (new Date(input.expectedDraftUpdatedAt).getTime() !== website.draftUpdatedAt.getTime()) {
+      throw DRAFT_CONFLICT();
+    }
+
+    const snapshot = buildPublishSnapshot(toDetail(website).draft);
+    const now = new Date();
+    let versionNumber = 0;
+    try {
+      await prisma.$transaction(async (tx) => {
+        const latest = await tx.websiteVersion.aggregate({ where: { websiteId: website.id }, _max: { version: true } });
+        versionNumber = (latest._max.version ?? 0) + 1;
+        const version = await tx.websiteVersion.create({
+          data: {
+            websiteId: website.id,
+            version: versionNumber,
+            status: PublishStatus.SUCCEEDED,
+            snapshot: snapshot as unknown as Prisma.InputJsonValue,
+            publishedById: actor.id,
+            completedAt: now,
+          },
+        });
+        const claimed = await tx.website.updateMany({
+          where: { id: website.id, draftUpdatedAt: website.draftUpdatedAt },
+          data: { liveVersionId: version.id, publishedAt: now, status: WebsiteStatus.PUBLISHED },
+        });
+        if (claimed.count === 0) throw DRAFT_CONFLICT();
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new AppError(409, "Another publish is in progress. Try again in a moment.", "PUBLISH_IN_PROGRESS");
+      }
+      throw error;
+    }
+
+    logger.info({ websiteId: website.id, version: versionNumber, actorId: actor.id }, "Website published");
     return this.get(id, actor);
+  }
+
+  async listVersions(id: string, actor: AuthUser): Promise<WebsiteVersionView[]> {
+    const website = await prisma.website.findFirst({
+      where: { id, ...scopeFor(actor) },
+      select: { id: true, liveVersionId: true },
+    });
+    if (!website) throw NOT_FOUND();
+    const versions = await prisma.websiteVersion.findMany({
+      where: { websiteId: website.id },
+      orderBy: { version: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        version: true,
+        status: true,
+        createdAt: true,
+        completedAt: true,
+        publishedBy: { select: { fullName: true } },
+      },
+    });
+    return versions.map((version) => ({
+      id: version.id,
+      version: version.version,
+      status: version.status,
+      isLive: version.id === website.liveVersionId,
+      publishedByName: version.publishedBy?.fullName ?? null,
+      createdAt: version.createdAt.toISOString(),
+      completedAt: version.completedAt?.toISOString() ?? null,
+    }));
   }
 
   private async findAccessibleOrThrow(id: string, actor: AuthUser): Promise<{ id: string; clientId: string }> {

@@ -5,6 +5,7 @@ import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types
 type IdParams = { id: string };
 type TemplateParams = { templateId: string };
 type SavedSectionParams = { id: string; savedSectionId: string };
+type PageParams = { id: string; pageId: string };
 
 export class WebsiteController {
   listTemplates = async (req: Request, res: Response, next: NextFunction) => {
@@ -108,6 +109,30 @@ export class WebsiteController {
   saveDraft = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
     try {
       res.json({ website: await websiteService.saveDraft(req.params.id, req.body, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  savePageContent = async (req: Request<PageParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json(await websiteService.savePageContent(req.params.id, req.params.pageId, req.body, req.user!));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  publish = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json({ website: await websiteService.publish(req.params.id, req.body, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  listVersions = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json({ versions: await websiteService.listVersions(req.params.id, req.user!) });
     } catch (error) {
       next(error);
     }

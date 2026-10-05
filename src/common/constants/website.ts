@@ -1,1 +1,1 @@
-export { BuilderType, PageType, WebsiteStatus } from "../../generated/prisma/enums.js";
+export { BuilderType, PageType, PublishStatus, WebsiteStatus } from "../../generated/prisma/enums.js";
