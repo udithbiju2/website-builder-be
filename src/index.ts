@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import { logger } from "./config/logger.js";
 import { prisma } from "./config/prisma.js";
 import { connectRedis, redis } from "./config/redis.js";
+import { seedDesignLibrary } from "./seeder/seed-design-library.js";
 import { seedSuperAdmin } from "./seeder/seed-super-admin.js";
 
 async function bootstrap() {
@@ -11,6 +12,7 @@ async function bootstrap() {
   logger.info("Database connected");
   await connectRedis();
   await seedSuperAdmin();
+  await seedDesignLibrary();
 
   const server = http.createServer(app);
   server.listen(env.PORT, "0.0.0.0", () => {

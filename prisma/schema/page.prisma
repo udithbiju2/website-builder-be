@@ -1,0 +1,27 @@
+/// A DRAFT page. `sections` is an ordered site-kit Section[] (type, settings, data).
+model Page {
+  id             String   @id @default(uuid()) @db.Uuid
+  websiteId      String   @db.Uuid
+  clientId       String   @db.Uuid
+  name           String   @db.VarChar(120)
+  /// "/" for the home page, otherwise "/about" style.
+  slug           String   @db.VarChar(160)
+  pageType       PageType @default(CUSTOM)
+  /// Template the page started from; informational only.
+  templateKey    String?  @db.VarChar(80)
+  visible        Boolean  @default(true)
+  showInNav      Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  seoTitle       String?  @db.VarChar(160)
+  seoDescription String?  @db.VarChar(320)
+  sections       Json     @default("[]")
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
+
+  website Website @relation(fields: [websiteId, clientId], references: [id, clientId], onDelete: Cascade)
+
+  @@unique([websiteId, slug])
+  @@index([websiteId, sortOrder])
+  @@index([clientId])
+  @@map("pages")
+}

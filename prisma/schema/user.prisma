@@ -16,6 +16,12 @@ model User {
   client        Client?        @relation(fields: [clientId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
 
+  websitesCreated      Website[]        @relation("WebsiteCreatedBy")
+  versionsPublished    WebsiteVersion[] @relation("VersionPublishedBy")
+  mediaUploaded        MediaFile[]      @relation("MediaUploadedBy")
+  savedSectionsCreated SavedSection[]   @relation("SavedSectionCreatedBy")
+  templatesCreated     WebsiteTemplate[] @relation("WebsiteTemplateCreatedBy")
+
   @@index([clientId])
   @@index([role, status])
   @@map("users")

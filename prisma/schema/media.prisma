@@ -1,0 +1,45 @@
+model MediaFolder {
+  id        String   @id @default(uuid()) @db.Uuid
+  clientId  String   @db.Uuid
+  /// Null = shared across all of the client's websites.
+  websiteId String?  @db.Uuid
+  name      String   @db.VarChar(80)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  client  Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  website Website?    @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  files   MediaFile[]
+
+  @@index([clientId, websiteId])
+  @@map("media_folders")
+}
+
+/// Storage-agnostic file record; the bytes live at `storageKey` in the configured storage.
+model MediaFile {
+  id           String    @id @default(uuid()) @db.Uuid
+  clientId     String    @db.Uuid
+  websiteId    String?   @db.Uuid
+  folderId     String?   @db.Uuid
+  kind         MediaKind
+  fileName     String    @db.VarChar(255)
+  mimeType     String    @db.VarChar(127)
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  altText      String?   @db.VarChar(300)
+  storageKey   String    @unique @db.VarChar(512)
+  uploadedById String?   @db.Uuid
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
+
+  client     Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  website    Website?     @relation("WebsiteMedia", fields: [websiteId], references: [id], onDelete: SetNull)
+  folder     MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  uploadedBy User?        @relation("MediaUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  logoFor    Website[]    @relation("WebsiteLogo")
+
+  @@index([clientId, websiteId, createdAt])
+  @@index([folderId])
+  @@map("media_files")
+}
