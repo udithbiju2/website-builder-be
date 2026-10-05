@@ -18,6 +18,8 @@ export const SECTION_SPACINGS = ["none", "compact", "default", "relaxed"] as con
 export const SECTION_ALIGNMENTS = ["center", "left"] as const;
 export const ICON_NAMES = ["check", "star", "bolt", "shield", "heart", "chat"] as const;
 export const SECTION_TYPES = [
+  "header",
+  "footer",
   "hero",
   "features",
   "services",
@@ -65,6 +67,7 @@ export type HeaderData = {
   cta?: LinkRef;
   announcement?: string;
   sticky: boolean;
+  hidden?: boolean;
 };
 
 export type FooterData = {
@@ -76,6 +79,7 @@ export type FooterData = {
   contact?: { email?: string; phone?: string; address?: string };
   social: LinkRef[];
   copyright: string;
+  hidden?: boolean;
 };
 
 export type SectionSettings = {
@@ -89,6 +93,8 @@ export type SectionSettings = {
 };
 
 export type SectionDataMap = {
+  header: HeaderData;
+  footer: FooterData;
   hero: {
     variant: "centered" | "split";
     eyebrow?: string;

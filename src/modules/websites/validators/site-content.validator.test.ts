@@ -12,6 +12,8 @@ function section(type: string, data: Record<string, unknown>, extra: Record<stri
 describe("sectionSchema", () => {
   it("accepts every new section type with valid data", () => {
     const valid = [
+      section("header", { design: "logo-left", siteName: "My Site", menu: [{ label: "Home", href: "/" }], sticky: false }),
+      section("footer", { design: "columns", siteName: "My Site", copyright: "© 2026", columns: [], social: [] }),
       section("logos", { grayscale: true, logos: [{ url: "https://cdn.example.com/a.svg", alt: "Acme" }] }),
       section("split", { heading: "Hi", body: "", bullets: ["One"], imagePosition: "left" }),
       section("stats", { items: [{ value: "99%", label: "Uptime" }] }),

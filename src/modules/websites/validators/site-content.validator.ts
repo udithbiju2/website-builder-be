@@ -91,6 +91,7 @@ export const headerSchema = Joi.object({
   cta: link.optional(),
   announcement: optionalText(200),
   sticky: Joi.boolean().required(),
+  hidden: Joi.boolean().optional(),
 });
 
 export const footerSchema = Joi.object({
@@ -111,9 +112,12 @@ export const footerSchema = Joi.object({
   }).optional(),
   social: Joi.array().items(link).max(10).required(),
   copyright: text(200).allow("").required(),
+  hidden: Joi.boolean().optional(),
 });
 
 const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
+  header: headerSchema,
+  footer: footerSchema,
   hero: Joi.object({
     variant: Joi.string().valid("centered", "split").required(),
     eyebrow: optionalText(200),
