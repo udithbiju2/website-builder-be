@@ -1,0 +1,20 @@
+name: webbuilder-backend
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    # PostgreSQL runs on the host machine (local and production), not in Docker.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_URL: ${DOCKER_DATABASE_URL:?Set DOCKER_DATABASE_URL in .env}
+      REDIS_URL: ${DOCKER_REDIS_URL:-redis://host.docker.internal:6379}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"

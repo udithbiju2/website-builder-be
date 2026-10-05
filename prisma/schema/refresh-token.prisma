@@ -1,0 +1,14 @@
+model RefreshToken {
+  id        String    @id @db.Uuid
+  userId    String    @db.Uuid
+  /// SHA-256 of the raw token; the raw token only lives in the httpOnly cookie.
+  tokenHash String    @unique @db.VarChar(64)
+  expiresAt DateTime  @db.Timestamptz(6)
+  revokedAt DateTime? @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}

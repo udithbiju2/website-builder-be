@@ -1,0 +1,14 @@
+// Models live one per file in this folder; Prisma merges them.
+// Create a migration after each change with:
+//   npm run db:migrate -- --name <change_name>
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

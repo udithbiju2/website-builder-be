@@ -1,0 +1,22 @@
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String     @unique @db.VarChar(255)
+  passwordHash    String     @db.VarChar(255)
+  fullName        String     @db.VarChar(120)
+  phone           String?    @db.VarChar(32)
+  role            UserRole
+  status          UserStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt DateTime?  @db.Timestamptz(6)
+  lastSignedInAt  DateTime?  @db.Timestamptz(6)
+  /// Null for SUPER_ADMIN; required for CLIENT users.
+  clientId        String?    @db.Uuid
+  createdAt       DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @db.Timestamptz(6)
+
+  client        Client?        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@index([clientId])
+  @@index([role, status])
+  @@map("users")
+}

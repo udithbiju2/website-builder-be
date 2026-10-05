@@ -1,0 +1,51 @@
+import cookieParser from "cookie-parser";
+import cors from "cors";
+import express from "express";
+import helmet from "helmet";
+import { errorHandler, notFoundHandler } from "./common/middleware/error-handler.js";
+import { env } from "./config/env.js";
+import { logger } from "./config/logger.js";
+import authRouter from "./modules/auth/auth.routes.js";
+import clientsRouter from "./modules/clients/client.routes.js";
+import emailSettingsRouter from "./modules/email/email.routes.js";
+import healthRouter from "./modules/health/health.routes.js";
+
+const app = express();
+
+app.disable("x-powered-by");
+app.set("trust proxy", env.TRUST_PROXY ? 1 : false);
+app.use(helmet());
+app.use(
+  cors({
+    origin: env.CORS_ORIGIN?.split(",").map((value) => value.trim()) ?? false,
+    credentials: true,
+  }),
+);
+app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser());
+
+app.use((req, res, next) => {
+  const started = Date.now();
+  res.on("finish", () => {
+    logger.info(
+      {
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        durationMs: Date.now() - started,
+      },
+      "request",
+    );
+  });
+  next();
+});
+
+app.use("/api/health", healthRouter);
+app.use("/api/auth", authRouter);
+app.use("/api/admin/settings/email", emailSettingsRouter);
+app.use("/api/admin/clients", clientsRouter);
+
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+export default app;

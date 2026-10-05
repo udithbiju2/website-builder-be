@@ -1,0 +1,13 @@
+/// Client workspace. Every client-owned record (websites, pages, media, settings) carries a clientId.
+model Client {
+  id           String       @id @default(uuid()) @db.Uuid
+  businessName String       @db.VarChar(160)
+  address      String?      @db.VarChar(500)
+  source       ClientSource
+  createdAt    DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(6)
+
+  users User[]
+
+  @@map("clients")
+}

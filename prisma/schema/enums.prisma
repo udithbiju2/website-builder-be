@@ -1,0 +1,15 @@
+enum UserRole {
+  SUPER_ADMIN
+  CLIENT
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum ClientSource {
+  SELF_SIGNUP
+  ADMIN_CREATED
+}

@@ -1,0 +1,38 @@
+import Joi from "joi";
+import { ClientSource, UserStatus } from "../../../common/constants/roles.js";
+
+const clientDetails = {
+  businessName: Joi.string().trim().min(2).max(160).required(),
+  fullName: Joi.string().trim().min(2).max(120).required(),
+  email: Joi.string().trim().lowercase().email().max(255).required(),
+  phone: Joi.string()
+    .trim()
+    .pattern(/^\+?[0-9 ()-]{7,20}$/)
+    .allow("")
+    .optional()
+    .messages({ "string.pattern.base": "Enter a valid phone number" }),
+  address: Joi.string().trim().max(500).allow("").optional(),
+};
+
+export const listClientsQuerySchema = Joi.object({
+  search: Joi.string().trim().max(120).allow("").optional(),
+  source: Joi.string()
+    .valid(...Object.values(ClientSource))
+    .optional(),
+  status: Joi.string()
+    .valid(...Object.values(UserStatus))
+    .optional(),
+  page: Joi.number().integer().min(1).default(1),
+  pageSize: Joi.number().integer().min(1).max(100).default(20),
+});
+
+export const clientIdParamsSchema = Joi.object({
+  id: Joi.string().guid().required(),
+});
+
+export const createClientSchema = Joi.object({
+  ...clientDetails,
+  sendInvite: Joi.boolean().default(true),
+});
+
+export const updateClientSchema = Joi.object(clientDetails);
