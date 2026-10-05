@@ -5,6 +5,7 @@ import {
   FONT_KEYS,
   FOOTER_DESIGNS,
   HEADER_DESIGNS,
+  HERO_VARIANTS,
   ICON_NAMES,
   RADIUS_SIZES,
   SECTION_ALIGNMENTS,
@@ -171,18 +172,72 @@ export const footerSchema = Joi.object({
   hidden: Joi.boolean().optional(),
 });
 
+export const heroSchema = Joi.object({
+  variant: Joi.string()
+    .valid(...HERO_VARIANTS)
+    .required(),
+  eyebrow: optionalText(200),
+  badgeIcon: optionalText(50),
+  heading: optionalText(200),
+  highlightText: optionalText(100),
+  subheading: optionalText(500),
+  description: optionalText(1000),
+  primaryCta: link.optional(),
+  secondaryCta: link.optional(),
+  tertiaryCta: link.optional(),
+  buttons: Joi.array().items(link).max(6).optional(),
+  mediaType: Joi.string().valid("image", "video", "both").optional(),
+  videoUrl: optionalText(500),
+  videoAutoplay: Joi.boolean().optional(),
+  videoControls: Joi.boolean().optional(),
+  videoLoop: Joi.boolean().optional(),
+  image: image.optional(),
+  secondaryImage: image.optional(),
+  backgroundImage: image.optional(),
+  bgImagePosition: Joi.string().valid("bottom", "center", "top", "cover").optional(),
+  bgOverlayType: Joi.string().valid("dark", "light", "gradient", "none").optional(),
+  backgroundVideoUrl: optionalText(500),
+  imagePosition: Joi.string().valid("right", "left", "bottom", "background", "card").optional(),
+  imageStyle: Joi.string().valid("mockup", "rounded", "glow", "shadow", "plain").optional(),
+  overlayOpacity: Joi.number().min(0).max(100).optional(),
+  overlayBlur: Joi.boolean().optional(),
+  minHeight: Joi.string().valid("auto", "compact", "screen", "tall").optional(),
+  contentAlign: Joi.string().valid("center", "left", "right").optional(),
+  bottomShape: Joi.string().valid("none", "wave", "curve", "slant", "tilt").optional(),
+  rating: Joi.object({
+    stars: Joi.number().min(1).max(5).optional(),
+    text: optionalText(200),
+    avatarCount: Joi.number().min(1).max(10).optional(),
+  }).optional(),
+  floatingCards: Joi.array()
+    .items(
+      Joi.object({
+        title: text(60).required(),
+        subtitle: optionalText(100),
+        badge: optionalText(30),
+        icon: optionalText(50),
+      })
+    )
+    .max(4)
+    .optional(),
+  trustedBy: Joi.object({
+    label: optionalText(100),
+    logos: Joi.array()
+      .items(
+        Joi.object({
+          label: text(60).required(),
+          url: optionalText(500),
+        })
+      )
+      .max(8)
+      .optional(),
+  }).optional(),
+});
+
 const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
   header: headerSchema,
   footer: footerSchema,
-  hero: Joi.object({
-    variant: Joi.string().valid("centered", "split").required(),
-    eyebrow: optionalText(200),
-    heading: text(200).required(),
-    subheading: optionalText(500),
-    primaryCta: link.optional(),
-    secondaryCta: link.optional(),
-    image: image.optional(),
-  }),
+  hero: heroSchema,
   features: Joi.object({
     heading: text(200).required(),
     intro: optionalText(500),
@@ -353,6 +408,13 @@ export const sectionSchema = Joi.object({
       .allow("")
       .optional()
       .messages({ "string.pattern.base": "Anchors use lowercase letters, numbers and hyphens" }),
+    customColors: Joi.object({
+      background: color.optional(),
+      text: color.optional(),
+      primary: color.optional(),
+      muted: color.optional(),
+      border: color.optional(),
+    }).optional(),
   }).required(),
   data: Joi.when("type", {
     switch: SECTION_TYPES.map((type) => ({ is: type, then: SECTION_DATA[type].required() })),

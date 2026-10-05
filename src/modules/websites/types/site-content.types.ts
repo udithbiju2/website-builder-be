@@ -31,6 +31,19 @@ export const FOOTER_DESIGNS = [
   "centered",
   "cta-banner",
 ] as const;
+export const HERO_VARIANTS = [
+  "centered",
+  "split",
+  "split-left",
+  "background-image",
+  "video-bg",
+  "gradient",
+  "curved-bottom",
+  "soft-card",
+  "minimal-typography",
+  "floating-cards",
+  "asymmetric",
+] as const;
 export const SECTION_BACKGROUNDS = ["default", "surface", "primary", "dark"] as const;
 export const SECTION_SPACINGS = ["none", "compact", "default", "relaxed"] as const;
 export const SECTION_ALIGNMENTS = ["center", "left"] as const;
@@ -162,6 +175,14 @@ export type FooterData = {
   hidden?: boolean;
 };
 
+export type SectionCustomColors = {
+  background?: string;
+  text?: string;
+  primary?: string;
+  muted?: string;
+  border?: string;
+};
+
 export type SectionSettings = {
   background: (typeof SECTION_BACKGROUNDS)[number];
   hideOnMobile: boolean;
@@ -170,20 +191,66 @@ export type SectionSettings = {
   align?: (typeof SECTION_ALIGNMENTS)[number];
   /** In-page anchor (`#pricing`); lowercase words and hyphens only. */
   anchor?: string;
+  customColors?: SectionCustomColors;
+};
+
+export type HeroFloatingCard = {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  icon?: string;
+};
+
+export type HeroRating = {
+  stars?: number;
+  text?: string;
+  avatarCount?: number;
+};
+
+export type HeroTrustedBy = {
+  label?: string;
+  logos?: { label: string; url?: string }[];
+};
+
+export type HeroData = {
+  variant: (typeof HERO_VARIANTS)[number];
+  eyebrow?: string;
+  badgeIcon?: string;
+  heading: string;
+  highlightText?: string;
+  subheading?: string;
+  description?: string;
+  primaryCta?: LinkRef;
+  secondaryCta?: LinkRef;
+  tertiaryCta?: LinkRef;
+  buttons?: LinkRef[];
+  mediaType?: "image" | "video" | "both";
+  videoUrl?: string;
+  videoAutoplay?: boolean;
+  videoControls?: boolean;
+  videoLoop?: boolean;
+  image?: ImageRef;
+  secondaryImage?: ImageRef;
+  backgroundImage?: ImageRef;
+  bgImagePosition?: "bottom" | "center" | "top" | "cover";
+  bgOverlayType?: "dark" | "light" | "gradient" | "none";
+  backgroundVideoUrl?: string;
+  imagePosition?: "right" | "left" | "bottom" | "background" | "card";
+  imageStyle?: "mockup" | "rounded" | "glow" | "shadow" | "plain";
+  overlayOpacity?: number;
+  overlayBlur?: boolean;
+  minHeight?: "auto" | "compact" | "screen" | "tall";
+  contentAlign?: "center" | "left" | "right";
+  bottomShape?: "none" | "wave" | "curve" | "slant" | "tilt";
+  rating?: HeroRating;
+  floatingCards?: HeroFloatingCard[];
+  trustedBy?: HeroTrustedBy;
 };
 
 export type SectionDataMap = {
   header: HeaderData;
   footer: FooterData;
-  hero: {
-    variant: "centered" | "split";
-    eyebrow?: string;
-    heading: string;
-    subheading?: string;
-    primaryCta?: LinkRef;
-    secondaryCta?: LinkRef;
-    image?: ImageRef;
-  };
+  hero: HeroData;
   features: {
     heading: string;
     intro?: string;
