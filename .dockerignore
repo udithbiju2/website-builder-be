@@ -7,3 +7,4 @@ src/generated
 .dockerignore
 Dockerfile
 docker-compose.yml
+uploads
