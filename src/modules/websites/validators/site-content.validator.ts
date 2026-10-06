@@ -428,6 +428,9 @@ export const sectionSchema = Joi.object({
       muted: color.optional(),
       border: color.optional(),
     }).optional(),
+    font: Joi.string()
+      .valid(...FONT_KEYS)
+      .optional(),
   }).required(),
   data: Joi.when("type", {
     switch: SECTION_TYPES.map((type) => ({ is: type, then: SECTION_DATA[type].required() })),

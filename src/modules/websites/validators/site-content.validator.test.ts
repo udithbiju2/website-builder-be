@@ -27,6 +27,14 @@ describe("sectionSchema", () => {
     }
   });
 
+  it("accepts a known section font and rejects anything else", () => {
+    const text = (font: unknown) =>
+      section("text", { body: "Hello" }, { settings: { ...settings, font } });
+    assert.equal(sectionSchema.validate(section("text", { body: "Hello" })).error, undefined);
+    assert.equal(sectionSchema.validate(text("playfair-display")).error, undefined);
+    assert.ok(sectionSchema.validate(text("comic-sans; color: red")).error);
+  });
+
   it("rejects script URLs in links and images", () => {
     const { error } = sectionSchema.validate(
       section("cta", { heading: "Go", button: { label: "Click", href: "javascript:alert(1)" } }),
