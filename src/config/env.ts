@@ -56,6 +56,18 @@ export const env = {
   /** Encrypts secrets stored in the database (e.g. the Resend API key). */
   APP_ENCRYPTION_KEY: requiredSecret("APP_ENCRYPTION_KEY"),
 
+  /** Linode Object Storage (S3-compatible). Files go to UPLOAD_LOCAL_DIR on disk when any of these is unset. */
+  LINODE_OBJECT_STORAGE_ENDPOINT: process.env.LINODE_OBJECT_STORAGE_ENDPOINT?.trim() ?? "",
+  LINODE_OBJECT_STORAGE_REGION: process.env.LINODE_OBJECT_STORAGE_REGION?.trim() || "ap-south-1",
+  LINODE_OBJECT_STORAGE_BUCKET: process.env.LINODE_OBJECT_STORAGE_BUCKET?.trim() ?? "",
+  LINODE_OBJECT_STORAGE_ACCESS_KEY: process.env.LINODE_OBJECT_STORAGE_ACCESS_KEY?.trim() ?? "",
+  LINODE_OBJECT_STORAGE_SECRET_KEY: process.env.LINODE_OBJECT_STORAGE_SECRET_KEY?.trim() ?? "",
+  /** Optional prefix inside the bucket, e.g. "webbuilder". Empty = bucket root. */
+  STORAGE_FOLDER: process.env.STORAGE_FOLDER?.trim() ?? "",
+  UPLOAD_LOCAL_DIR: process.env.UPLOAD_LOCAL_DIR?.trim() || "uploads",
+  /** Public base URL of this API, used to build media URLs embedded in website content. */
+  API_PUBLIC_URL: (process.env.API_PUBLIC_URL?.trim() || `http://localhost:${process.env.PORT ?? 3000}`).replace(/\/$/, ""),
+
   SEED_SUPER_ADMIN_EMAIL: required("SEED_SUPER_ADMIN_EMAIL").toLowerCase(),
   SEED_SUPER_ADMIN_PASSWORD: required("SEED_SUPER_ADMIN_PASSWORD"),
   SEED_SUPER_ADMIN_NAME: process.env.SEED_SUPER_ADMIN_NAME?.trim() || "Super Admin",
