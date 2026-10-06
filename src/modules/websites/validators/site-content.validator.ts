@@ -239,18 +239,31 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
   footer: footerSchema,
   hero: heroSchema,
   features: Joi.object({
+    eyebrow: optionalText(100),
     heading: text(200).required(),
     intro: optionalText(500),
-    columns: columns.required(),
-    mobileColumns: columns.required(),
+    variant: Joi.string().valid("grid", "split", "pastel-icons", "minimal", "cards").optional(),
+    iconStyle: Joi.string().valid("pastel-circle", "square-badge", "minimal-accent", "colored-circle", "none").optional(),
+    cardStyle: Joi.string().valid("transparent", "surface", "bordered", "glass").optional(),
+    align: Joi.string().valid("left", "center").optional(),
+    columns: columns.optional().default(3),
+    mobileColumns: columns.optional().default(1),
+    splitPosition: Joi.string().valid("left", "right").optional(),
+    splitImage: image.optional(),
+    splitCta: link.optional(),
+    secondaryCta: link.optional(),
+    bottomCta: link.optional(),
     items: Joi.array()
       .items(
         Joi.object({
-          icon: Joi.string()
-            .valid(...ICON_NAMES)
-            .optional(),
+          icon: Joi.string().max(50).optional(),
+          iconColor: Joi.string().valid("orange", "green", "blue", "yellow", "purple", "pink", "cyan", "indigo", "red", "gray", "none", "default").optional(),
+          backgroundColor: Joi.string().max(100).allow("").optional(),
+          badge: optionalText(50),
           title: text(120).required(),
           description: text(600).allow("").required(),
+          link: link.optional(),
+          image: image.optional(),
         }),
       )
       .max(24)

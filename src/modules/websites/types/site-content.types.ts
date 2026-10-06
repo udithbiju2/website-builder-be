@@ -47,7 +47,32 @@ export const HERO_VARIANTS = [
 export const SECTION_BACKGROUNDS = ["default", "surface", "primary", "dark"] as const;
 export const SECTION_SPACINGS = ["none", "compact", "default", "relaxed"] as const;
 export const SECTION_ALIGNMENTS = ["center", "left"] as const;
-export const ICON_NAMES = ["check", "star", "bolt", "shield", "heart", "chat"] as const;
+export const ICON_NAMES = [
+  "check",
+  "star",
+  "bolt",
+  "shield",
+  "heart",
+  "chat",
+  "gear",
+  "user",
+  "mail",
+  "phone",
+  "chart",
+  "clock",
+  "tools",
+  "bell",
+  "wallet",
+  "pointer",
+  "help",
+  "sparkles",
+  "rocket",
+  "layers",
+  "box",
+  "lock",
+  "cloud",
+  "code",
+] as const;
 export const SECTION_TYPES = [
   "header",
   "footer",
