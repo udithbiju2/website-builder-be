@@ -6,7 +6,49 @@
 export type ImageRef = { url: string; alt: string };
 export type LinkRef = { label: string; href: string };
 
-export const FONT_KEYS = ["plex-sans", "system", "serif", "mono"] as const;
+/** Mirrors FONTS in frontend/src/site-kit/fonts.ts. Keys are stored in site data; only ever append. */
+export const FONT_KEYS = [
+  "inter",
+  "geist",
+  "manrope",
+  "plus-jakarta-sans",
+  "dm-sans",
+  "outfit",
+  "sora",
+  "figtree",
+  "onest",
+  "urbanist",
+  "lexend",
+  "rubik",
+  "open-sans",
+  "roboto",
+  "montserrat",
+  "raleway",
+  "nunito",
+  "work-sans",
+  "mulish",
+  "poppins",
+  "plex-sans",
+  "system",
+  "space-grotesk",
+  "bricolage-grotesque",
+  "syne",
+  "unbounded",
+  "archivo",
+  "playfair-display",
+  "lora",
+  "fraunces",
+  "merriweather",
+  "eb-garamond",
+  "cormorant",
+  "source-serif-4",
+  "noto-serif",
+  "serif",
+  "jetbrains-mono",
+  "fira-code",
+  "roboto-mono",
+  "mono",
+] as const;
 export const BUTTON_STYLES = ["filled", "outline"] as const;
 export const CARD_STYLES = ["border", "shadow", "flat"] as const;
 export const RADIUS_SIZES = ["none", "sm", "md", "lg"] as const;
@@ -47,7 +89,32 @@ export const HERO_VARIANTS = [
 export const SECTION_BACKGROUNDS = ["default", "surface", "primary", "dark"] as const;
 export const SECTION_SPACINGS = ["none", "compact", "default", "relaxed"] as const;
 export const SECTION_ALIGNMENTS = ["center", "left"] as const;
-export const ICON_NAMES = ["check", "star", "bolt", "shield", "heart", "chat"] as const;
+export const ICON_NAMES = [
+  "check",
+  "star",
+  "bolt",
+  "shield",
+  "heart",
+  "chat",
+  "gear",
+  "user",
+  "mail",
+  "phone",
+  "chart",
+  "clock",
+  "tools",
+  "bell",
+  "wallet",
+  "pointer",
+  "help",
+  "sparkles",
+  "rocket",
+  "layers",
+  "box",
+  "lock",
+  "cloud",
+  "code",
+] as const;
 export const SECTION_TYPES = [
   "header",
   "footer",
@@ -98,6 +165,17 @@ export type HeaderSubMenuItem = {
   icon?: string;
 };
 
+export const BRAND_DISPLAY_MODES = [
+  "auto",
+  "logo_left",
+  "logo_right",
+  "logo_top",
+  "logo_only",
+  "text_only",
+] as const;
+
+export type BrandDisplayMode = (typeof BRAND_DISPLAY_MODES)[number];
+
 export type HeaderMenuItem = {
   label: string;
   href: string;
@@ -110,6 +188,7 @@ export type HeaderData = {
   design: (typeof HEADER_DESIGNS)[number];
   siteName: string;
   logo?: ImageRef;
+  logoDisplay?: BrandDisplayMode;
   menu: HeaderMenuItem[];
   cta?: LinkRef;
   secondaryCta?: LinkRef;
@@ -160,6 +239,7 @@ export type FooterData = {
   design: (typeof FOOTER_DESIGNS)[number];
   siteName: string;
   logo?: ImageRef;
+  logoDisplay?: BrandDisplayMode;
   tagline?: string;
   description?: string;
   columns: { title: string; links: LinkRef[] }[];
@@ -192,6 +272,8 @@ export type SectionSettings = {
   /** In-page anchor (`#pricing`); lowercase words and hyphens only. */
   anchor?: string;
   customColors?: SectionCustomColors;
+  /** Overrides the theme font for this section only. */
+  font?: FontKey;
 };
 
 export type HeroFloatingCard = {

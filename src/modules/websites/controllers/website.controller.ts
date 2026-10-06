@@ -106,6 +106,15 @@ export class WebsiteController {
     }
   };
 
+  delete = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      await websiteService.delete(req.params.id, req.user!);
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  };
+
   saveDraft = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
     try {
       res.json({ website: await websiteService.saveDraft(req.params.id, req.body, req.user!) });
