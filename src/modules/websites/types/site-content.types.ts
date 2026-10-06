@@ -98,6 +98,17 @@ export type HeaderSubMenuItem = {
   icon?: string;
 };
 
+export const BRAND_DISPLAY_MODES = [
+  "auto",
+  "logo_left",
+  "logo_right",
+  "logo_top",
+  "logo_only",
+  "text_only",
+] as const;
+
+export type BrandDisplayMode = (typeof BRAND_DISPLAY_MODES)[number];
+
 export type HeaderMenuItem = {
   label: string;
   href: string;
@@ -110,6 +121,7 @@ export type HeaderData = {
   design: (typeof HEADER_DESIGNS)[number];
   siteName: string;
   logo?: ImageRef;
+  logoDisplay?: BrandDisplayMode;
   menu: HeaderMenuItem[];
   cta?: LinkRef;
   secondaryCta?: LinkRef;
@@ -160,6 +172,7 @@ export type FooterData = {
   design: (typeof FOOTER_DESIGNS)[number];
   siteName: string;
   logo?: ImageRef;
+  logoDisplay?: BrandDisplayMode;
   tagline?: string;
   description?: string;
   columns: { title: string; links: LinkRef[] }[];

@@ -41,6 +41,7 @@ websitesRouter.post(
 );
 websitesRouter.get("/:id", byId, websiteController.get);
 websitesRouter.patch("/:id", byId, validate(updateWebsiteSchema), websiteController.update);
+websitesRouter.delete("/:id", byId, websiteController.delete);
 websitesRouter.put("/:id/draft", byId, validate(saveDraftSchema), websiteController.saveDraft);
 websitesRouter.put(
   "/:id/pages/:pageId/content",

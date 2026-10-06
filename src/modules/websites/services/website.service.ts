@@ -506,6 +506,20 @@ export class WebsiteService {
     return toDetail(website);
   }
 
+  async delete(id: string, actor: AuthUser): Promise<void> {
+    const website = await this.findAccessibleOrThrow(id, actor);
+    await prisma.$transaction(async (tx) => {
+      await tx.website.update({
+        where: { id: website.id },
+        data: { liveVersionId: null },
+      });
+      await tx.website.delete({
+        where: { id: website.id },
+      });
+    });
+    logger.info({ websiteId: website.id, clientId: website.clientId, actorId: actor.id }, "Website deleted");
+  }
+
   /**
    * Replaces the whole draft (theme, header, footer, pages) in one transaction.
    * `expectedDraftUpdatedAt` must match the stored value, so a stale editor tab
