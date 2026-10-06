@@ -9,6 +9,7 @@ import authRouter from "./modules/auth/auth.routes.js";
 import clientsRouter from "./modules/clients/client.routes.js";
 import emailSettingsRouter from "./modules/email/email.routes.js";
 import healthRouter from "./modules/health/health.routes.js";
+import mediaRouter from "./modules/media/media.routes.js";
 import websitesRouter from "./modules/websites/website.routes.js";
 
 const app = express();
@@ -46,6 +47,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/admin/settings/email", emailSettingsRouter);
 app.use("/api/admin/clients", clientsRouter);
 app.use("/api/websites", websitesRouter);
+app.use("/api/media", mediaRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
