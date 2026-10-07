@@ -143,12 +143,57 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     data.intro = data.description;
   }
 
-  // Normalize string image URLs to { url, alt } objects
+  // Normalize string image URLs to { url, alt } objects, and strip empty images
   if (typeof data.backgroundImage === "string") {
-    data.backgroundImage = { url: data.backgroundImage, alt: "Background" };
+    data.backgroundImage = data.backgroundImage.trim()
+      ? { url: data.backgroundImage.trim(), alt: "Hero Background" }
+      : undefined;
   }
+  if (data.backgroundImage && typeof data.backgroundImage === "object") {
+    const bg = data.backgroundImage as Record<string, unknown>;
+    if (!bg.url || typeof bg.url !== "string" || !bg.url.trim()) {
+      delete data.backgroundImage;
+    } else {
+      bg.url = (bg.url as string).trim();
+      bg.alt = typeof bg.alt === "string" ? bg.alt : "Hero Background";
+    }
+  }
+
   if (typeof data.image === "string") {
-    data.image = { url: data.image, alt: "Image" };
+    data.image = data.image.trim() ? { url: data.image.trim(), alt: "Image" } : undefined;
+  }
+  if (data.image && typeof data.image === "object") {
+    const img = data.image as Record<string, unknown>;
+    if (!img.url || typeof img.url !== "string" || !img.url.trim()) {
+      delete data.image;
+    } else {
+      img.url = (img.url as string).trim();
+      img.alt = typeof img.alt === "string" ? img.alt : "Image";
+    }
+  }
+
+  if (data.secondaryImage && typeof data.secondaryImage === "object") {
+    const img = data.secondaryImage as Record<string, unknown>;
+    if (!img.url || typeof img.url !== "string" || !img.url.trim()) {
+      delete data.secondaryImage;
+    }
+  }
+
+  // Sanitize links and cta
+  if (data.primaryCta && typeof data.primaryCta === "object") {
+    const cta = data.primaryCta as Record<string, unknown>;
+    if (!cta.href || typeof cta.href !== "string" || !cta.href.trim()) {
+      cta.href = "/contact";
+    }
+    if (!cta.label || typeof cta.label !== "string" || !cta.label.trim()) {
+      cta.label = "Get Started";
+    }
+  }
+  if (data.secondaryCta && typeof data.secondaryCta === "object") {
+    const cta = data.secondaryCta as Record<string, unknown>;
+    if (!cta.href || typeof cta.href !== "string" || !cta.href.trim() || !cta.label || typeof cta.label !== "string" || !cta.label.trim()) {
+      delete data.secondaryCta;
+    }
   }
 
   switch (type) {
@@ -276,6 +321,34 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
       if (typeof data.variant !== "string" || !validHeroVariants.includes(data.variant)) {
         data.variant = data.backgroundImage ? "background-image" : "centered";
       }
+      const validImagePositions = ["right", "left", "bottom", "background", "card"];
+      if (data.imagePosition && !validImagePositions.includes(data.imagePosition as string)) {
+        delete data.imagePosition;
+      }
+      const validBgPositions = ["bottom", "center", "top", "cover"];
+      if (data.bgImagePosition && !validBgPositions.includes(data.bgImagePosition as string)) {
+        delete data.bgImagePosition;
+      }
+      const validBgOverlays = ["dark", "light", "gradient", "none"];
+      if (data.bgOverlayType && !validBgOverlays.includes(data.bgOverlayType as string)) {
+        delete data.bgOverlayType;
+      }
+      const validImageStyles = ["mockup", "rounded", "glow", "shadow", "plain"];
+      if (data.imageStyle && !validImageStyles.includes(data.imageStyle as string)) {
+        delete data.imageStyle;
+      }
+      const validMinHeights = ["auto", "compact", "screen", "tall"];
+      if (data.minHeight && !validMinHeights.includes(data.minHeight as string)) {
+        delete data.minHeight;
+      }
+      const validAligns = ["center", "left", "right"];
+      if (data.contentAlign && !validAligns.includes(data.contentAlign as string)) {
+        delete data.contentAlign;
+      }
+      const validBottomShapes = ["none", "wave", "curve", "slant", "tilt"];
+      if (data.bottomShape && !validBottomShapes.includes(data.bottomShape as string)) {
+        delete data.bottomShape;
+      }
       if (!data.heading) data.heading = "Transform Your Digital Vision";
       if (!data.primaryCta || typeof (data.primaryCta as Record<string, unknown>)?.label !== "string") {
         data.primaryCta = { label: "Get Started", href: "/contact" };
@@ -322,7 +395,7 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "header": {
-      const validHeaderDesigns = ["logo-left", "centered", "classical", "floating", "transparent"];
+      const validHeaderDesigns = ["logo-left", "centered", "classical", "minimalist", "comprehensive", "ecommerce", "floating", "transparent"];
       if (typeof data.design !== "string" || !validHeaderDesigns.includes(data.design)) {
         data.design = "logo-left";
       }
@@ -351,7 +424,7 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "footer": {
-      const validFooterDesigns = ["columns", "centered", "simple", "split", "minimalist"];
+      const validFooterDesigns = ["columns", "simple", "mega", "newsletter", "split", "inline", "centered", "cta-banner"];
       if (typeof data.design !== "string" || !validFooterDesigns.includes(data.design)) {
         data.design = "columns";
       }
@@ -508,38 +581,78 @@ ${SECTION_SCHEMAS_GUIDE}`;
 
 const SECTION_KEYWORDS: Record<string, string> = {
   header: "header",
+  haeder: "header",
+  haedrr: "header",
+  haedr: "header",
+  headrr: "header",
+  headr: "header",
+  hedar: "header",
+  heder: "header",
+  headdr: "header",
+  heddr: "header",
+  hadder: "header",
+  haedd: "header",
   navbar: "header",
+  navba: "header",
+  navbr: "header",
   nav: "header",
   menu: "header",
   footer: "footer",
+  footr: "footer",
+  foter: "footer",
+  fotter: "footer",
+  footerr: "footer",
+  foot: "footer",
   copyright: "footer",
   hero: "hero",
   banner: "hero",
+  headline: "hero",
+  herosection: "hero",
   feature: "features",
   features: "features",
+  faeture: "features",
+  faetures: "features",
+  feautre: "features",
+  feautres: "features",
+  feture: "features",
+  fetures: "features",
+  featurs: "features",
   service: "services",
   services: "services",
+  servce: "services",
+  servces: "services",
+  servise: "services",
+  servises: "services",
   pricing: "pricing",
   price: "pricing",
+  prices: "pricing",
   plan: "pricing",
   plans: "pricing",
+  pricng: "pricing",
   testimonial: "testimonials",
   testimonials: "testimonials",
+  testimonal: "testimonials",
+  testimonals: "testimonials",
   review: "testimonials",
   reviews: "testimonials",
   faq: "faq",
   faqs: "faq",
   question: "faq",
+  questions: "faq",
   team: "team",
   members: "team",
+  aboutus: "team",
   marquee: "marquee",
   ticker: "marquee",
   carousel: "carousel",
   slider: "carousel",
   slide: "carousel",
+  slides: "carousel",
   cta: "cta",
   action: "cta",
+  calltoaction: "cta",
   contact: "contact",
+  form: "contact",
   stat: "stats",
   stats: "stats",
   numbers: "stats",
@@ -561,9 +674,6 @@ export class AiGeneratorService {
     return env.OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
   }
 
-  /**
-   * Calls OpenAI Chat Completions API using native fetch.
-   */
   /**
    * Calls OpenAI Chat Completions API using native fetch.
    */
@@ -676,47 +786,47 @@ export class AiGeneratorService {
       return msgs;
     };
 
-    // Check if a specific section type is mentioned in the prompt
+    // Check if a specific section type is mentioned in the prompt (with typo tolerance)
     let requestedSectionType: string | null = null;
     for (const [kw, stype] of Object.entries(SECTION_KEYWORDS)) {
-      if (new RegExp(`\\b${kw}\\b`, "i").test(lowerPrompt)) {
+      if (lowerPrompt.includes(kw) || new RegExp(`\\b${kw}\\b`, "i").test(lowerPrompt)) {
         requestedSectionType = stype;
         break;
       }
     }
 
     const isExplicitAddSectionCommand =
-      /\b(add|insert|create|append|build|make|generate|design)\s+(a\s+|an\s+|new\s+|beautiful\s+|beautifull\s+|modern\s+)?(header|navbar|nav|footer|hero|features|services|pricing|testimonials|faq|cta|team|marquee|carousel|stats|contact)\b/i.test(lowerPrompt) ||
-      /\b(add|insert|create|append|build|make|generate)\s+(a\s+|an\s+|new\s+)?section\b/i.test(lowerPrompt) ||
-      lowerPrompt.startsWith("add section") ||
-      lowerPrompt.startsWith("new section") ||
-      lowerPrompt.startsWith("build header") ||
-      lowerPrompt.startsWith("create header") ||
-      lowerPrompt.startsWith("add header") ||
-      lowerPrompt.startsWith("build footer") ||
-      lowerPrompt.startsWith("create footer") ||
-      lowerPrompt.startsWith("add footer") ||
-      (Boolean(requestedSectionType) && !lowerPrompt.includes("full page") && !lowerPrompt.includes("entire page") && !lowerPrompt.includes("landing page") && !lowerPrompt.includes("website"));
+      lowerPrompt.includes("add") ||
+      lowerPrompt.includes("insert") ||
+      lowerPrompt.includes("append") ||
+      lowerPrompt.includes("create") ||
+      lowerPrompt.includes("build") ||
+      lowerPrompt.includes("put") ||
+      lowerPrompt.includes("give") ||
+      lowerPrompt.includes("also") ||
+      lowerPrompt.includes("plus") ||
+      Boolean(
+        requestedSectionType &&
+        !lowerPrompt.includes("full page") &&
+        !lowerPrompt.includes("entire page") &&
+        !lowerPrompt.includes("landing page") &&
+        !lowerPrompt.includes("whole website") &&
+        !lowerPrompt.includes("new website") &&
+        !lowerPrompt.includes("redesign all")
+      );
 
-    const isTargetingHeader = requestedSectionType === "header" || lowerPrompt.includes("header") || lowerPrompt.includes("navbar") || lowerPrompt.includes("nav bar");
-    const isTargetingFooter = requestedSectionType === "footer" || lowerPrompt.includes("footer") || lowerPrompt.includes("copyright");
-
-    // Check if target section already exists on page
-    const existingTargetSection =
-      currentSection ||
-      (isTargetingHeader ? currentSections.find((s) => s.type === "header") : null) ||
-      (isTargetingFooter ? currentSections.find((s) => s.type === "footer") : null) ||
-      (requestedSectionType ? currentSections.find((s) => s.type === requestedSectionType) : null);
-
-    // Determine if this should generate an entirely NEW section rather than editing the current section
-    const isEditingCurrentSection = Boolean(existingTargetSection) && (scope === "section" || Boolean(requestedSectionType));
+    // Determine if we should edit an existing section in-place or create a new section
+    const isEditingCurrentSection =
+      scope === "section" &&
+      Boolean(currentSection) &&
+      !isExplicitAddSectionCommand &&
+      (!requestedSectionType || requestedSectionType === currentSection?.type);
 
     const shouldAddSection =
-      !isEditingCurrentSection &&
-      Boolean(requestedSectionType) &&
-      (isExplicitAddSectionCommand || scope === "page");
+      isExplicitAddSectionCommand ||
+      (Boolean(requestedSectionType) && !isEditingCurrentSection && (!currentSection || requestedSectionType !== currentSection?.type));
 
-    if (shouldAddSection && requestedSectionType && !existingTargetSection) {
+    if (shouldAddSection && requestedSectionType) {
       const userMessage = `Requested Section Type to Create: "${requestedSectionType}"
 User Prompt: "${prompt}"
 
@@ -724,16 +834,28 @@ Please create a complete, stunning, high-converting "${requestedSectionType}" se
 
       const rawAiResponse = await this.callOpenAi(buildMessages(SYSTEM_PROMPT_ADD_SECTION, userMessage));
 
-      let parsed: { summary?: string; type?: string; settings?: Record<string, unknown>; data?: Record<string, unknown> };
+      let parsed: any;
       try {
         parsed = JSON.parse(rawAiResponse);
       } catch {
         throw new AppError(502, "Failed to parse structured JSON response from AI.");
       }
 
-      const finalType = parsed.type || requestedSectionType;
-      const cleanSettings = sanitizeSectionSettings(parsed.settings || {});
-      const cleanData = sanitizeSectionData(finalType, parsed.data || {});
+      const sectionObj = (parsed.section && typeof parsed.section === "object") ? parsed.section : parsed;
+      const finalType = sectionObj.type || parsed.type || requestedSectionType;
+      const rawData = (sectionObj.data && typeof sectionObj.data === "object")
+        ? sectionObj.data
+        : (parsed.data && typeof parsed.data === "object")
+          ? parsed.data
+          : parsed;
+      const rawSettings = (sectionObj.settings && typeof sectionObj.settings === "object")
+        ? sectionObj.settings
+        : (parsed.settings && typeof parsed.settings === "object")
+          ? parsed.settings
+          : {};
+
+      const cleanSettings = sanitizeSectionSettings(rawSettings);
+      const cleanData = sanitizeSectionData(finalType, rawData);
 
       const newSection: SectionEnvelope = {
         id: crypto.randomUUID(),
@@ -754,12 +876,8 @@ Please create a complete, stunning, high-converting "${requestedSectionType}" se
     }
 
     // SCENARIO 2: EDIT EXISTING SECTION IN PLACE
-    if (scope === "section" || isEditingCurrentSection || (scope === "page" && Boolean(existingTargetSection) && Boolean(requestedSectionType))) {
-      let targetSection = existingTargetSection;
-
-      if (!targetSection && sectionId) {
-        targetSection = currentSections.find((s) => s.id === sectionId);
-      }
+    if (isEditingCurrentSection) {
+      const targetSection = currentSection!;
 
       if (targetSection) {
         const userMessage = `Current Section Type: "${targetSection.type}"

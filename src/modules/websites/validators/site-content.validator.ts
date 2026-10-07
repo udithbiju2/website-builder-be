@@ -64,10 +64,11 @@ const menuItem = Joi.object({
 const image = Joi.object({
   url: text(2048)
     .pattern(SAFE_IMAGE_URL)
-    .required()
+    .allow("")
+    .optional()
     .messages({ "string.pattern.base": "Images must use an http(s) URL or a /path" }),
-  alt: text(300).allow("").required(),
-});
+  alt: text(300).allow("").optional().default(""),
+}).allow(null);
 
 const color = Joi.string().pattern(HEX_COLOR).required().messages({ "string.pattern.base": "Use a #rrggbb color" });
 const columns = Joi.number().valid(1, 2, 3, 4);
@@ -107,16 +108,17 @@ export const themeSchema = Joi.object({
 export const headerSchema = Joi.object({
   design: Joi.string()
     .valid(...HEADER_DESIGNS)
-    .required(),
-  siteName: text(120).required(),
+    .default("logo-left")
+    .optional(),
+  siteName: text(120).default("Brand").optional(),
   logo: image.optional(),
-  menu: Joi.array().items(menuItem).max(24).required(),
+  menu: Joi.array().items(menuItem).max(24).default([]).optional(),
   cta: link.optional(),
   secondaryCta: link.optional(),
   announcement: optionalText(200),
   announcementLink: link.optional(),
   position: Joi.string().valid("static", "sticky", "fixed", "floating").optional(),
-  sticky: Joi.boolean().required(),
+  sticky: Joi.boolean().default(false).optional(),
   overlay: Joi.boolean().optional(),
   showSearch: Joi.boolean().optional(),
   showAccount: Joi.boolean().optional(),
@@ -130,7 +132,8 @@ export const headerSchema = Joi.object({
 export const footerSchema = Joi.object({
   design: Joi.string()
     .valid(...FOOTER_DESIGNS)
-    .required(),
+    .default("columns")
+    .optional(),
   siteName: text(120).required(),
   logo: image.optional(),
   tagline: optionalText(200),
@@ -175,7 +178,8 @@ export const footerSchema = Joi.object({
 export const heroSchema = Joi.object({
   variant: Joi.string()
     .valid(...HERO_VARIANTS)
-    .required(),
+    .default("centered")
+    .optional(),
   eyebrow: optionalText(200),
   badgeIcon: optionalText(50),
   heading: optionalText(200),
@@ -197,7 +201,7 @@ export const heroSchema = Joi.object({
   bgImagePosition: Joi.string().valid("bottom", "center", "top", "cover").optional(),
   bgOverlayType: Joi.string().valid("dark", "light", "gradient", "none").optional(),
   backgroundVideoUrl: optionalText(500),
-  imagePosition: Joi.string().valid("right", "left", "bottom", "background", "card").optional(),
+  imagePosition: Joi.string().valid("right", "left", "bottom", "background", "card", "center", "top", "none").optional(),
   imageStyle: Joi.string().valid("mockup", "rounded", "glow", "shadow", "plain").optional(),
   overlayOpacity: Joi.number().min(0).max(100).optional(),
   overlayBlur: Joi.boolean().optional(),
