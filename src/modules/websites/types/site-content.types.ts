@@ -342,10 +342,50 @@ export type SectionDataMap = {
   };
   services: {
     heading: string;
+    eyebrow?: string;
     intro?: string;
+    variant?:
+      | "cards-grid"
+      | "bento-grid"
+      | "split-showcase"
+      | "interactive-list"
+      | "horizontal-cards"
+      | "minimal-numbered";
+    cardStyle?: "surface" | "bordered" | "flat" | "glass" | "glow" | "elevated" | "gradient";
+    iconStyle?: "pastel-circle" | "square-badge" | "minimal-accent" | "colored-circle" | "glow-icon" | "none";
+    imageAspect?: "16:9" | "4:3" | "1:1" | "21:9" | "auto";
+    align?: "left" | "center";
     columns: GridColumns;
     mobileColumns: GridColumns;
-    items: { title: string; description: string; image?: ImageRef; link?: LinkRef }[];
+    items: {
+      title: string;
+      description: string;
+      badge?: string;
+      badgeColor?: string;
+      icon?: IconName | string;
+      iconColor?: string;
+      image?: ImageRef;
+      price?: string;
+      duration?: string;
+      features?: string[];
+      link?: LinkRef;
+      secondaryLink?: LinkRef;
+      backgroundColor?: string;
+      featured?: boolean;
+    }[];
+    splitPosition?: "left" | "right";
+    splitImage?: ImageRef;
+    splitTagline?: string;
+    splitCta?: LinkRef;
+    secondaryCta?: LinkRef;
+    bottomCta?: LinkRef;
+    bottomSecondaryCta?: LinkRef;
+    showBadges?: boolean;
+    showIcons?: boolean;
+    showImages?: boolean;
+    showPrices?: boolean;
+    showBullets?: boolean;
+    showNumbers?: boolean;
   };
   testimonials: {
     heading: string;
@@ -385,16 +425,29 @@ export type SectionDataMap = {
   };
   stats: { heading?: string; intro?: string; items: { value: string; label: string }[] };
   pricing: {
+    variant?: "cards-grid" | "minimal-monochrome" | "spotlight-tier" | "horizontal-rows";
+    eyebrow?: string;
     heading: string;
     intro?: string;
+    billingCycleLabel?: string;
+    discountBadge?: string;
+    footerNote?: string;
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    columns?: 1 | 2 | 3 | 4;
+    mobileColumns?: 1 | 2;
+    align?: "left" | "center";
     plans: {
       name: string;
       price: string;
       period?: string;
+      originalPrice?: string;
+      badge?: string;
       description?: string;
       features: string[];
+      excludedFeatures?: string[];
       cta?: LinkRef;
       featured: boolean;
+      highlightNote?: string;
     }[];
   };
   media: {
