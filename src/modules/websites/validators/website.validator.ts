@@ -152,5 +152,14 @@ export const generateAiSuggestionSchema = Joi.object({
   sectionId: Joi.string().trim().max(64).optional(),
   currentSection: sectionSchema.optional(),
   currentSections: Joi.array().items(sectionSchema).max(60).optional(),
+  history: Joi.array()
+    .items(
+      Joi.object({
+        role: Joi.string().valid("user", "assistant").required(),
+        content: Joi.string().trim().max(3000).required(),
+      })
+    )
+    .max(10)
+    .optional(),
 });
 

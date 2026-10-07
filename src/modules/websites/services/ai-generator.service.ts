@@ -16,12 +16,19 @@ export type AiSuggestionPayload = {
   id: string;
   prompt: string;
   summary: string;
+  chatReply?: string;
   target:
+    | { scope: "chat" }
     | { scope: "section"; sectionId: string }
     | { scope: "section_add"; sectionType: string }
     | { scope: "page" };
   before: SectionEnvelope[];
   after: SectionEnvelope[];
+};
+
+export type ChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 export type GenerateAiOptions = {
@@ -30,6 +37,7 @@ export type GenerateAiOptions = {
   sectionId?: string;
   currentSection?: SectionEnvelope;
   currentSections?: SectionEnvelope[];
+  history?: ChatHistoryMessage[];
 };
 
 const COLOR_MAP: Record<string, string> = {
@@ -118,6 +126,254 @@ export function sanitizeSectionSettings(rawSettings: Record<string, unknown> = {
   return result;
 }
 
+export function sanitizeSectionData(type: string, rawData: Record<string, unknown> = {}): Record<string, unknown> {
+  const data = { ...rawData };
+
+  // Normalize common top-level synonyms
+  if (data.title && !data.heading) {
+    data.heading = data.title;
+  }
+  if (data.subtitle && !data.subheading) {
+    data.subheading = data.subtitle;
+  }
+  if (data.subtitle && !data.intro) {
+    data.intro = data.subtitle;
+  }
+  if (data.description && !data.intro && type !== "hero") {
+    data.intro = data.description;
+  }
+
+  // Normalize string image URLs to { url, alt } objects
+  if (typeof data.backgroundImage === "string") {
+    data.backgroundImage = { url: data.backgroundImage, alt: "Background" };
+  }
+  if (typeof data.image === "string") {
+    data.image = { url: data.image, alt: "Image" };
+  }
+
+  switch (type) {
+    case "pricing": {
+      const validPricingVariants = ["cards-grid", "minimal-monochrome", "spotlight-tier", "horizontal-rows"];
+      if (typeof data.variant !== "string" || !validPricingVariants.includes(data.variant)) {
+        data.variant = "cards-grid";
+      }
+      if (!data.heading) data.heading = "Transparent, flexible pricing";
+
+      // AI might return tiers instead of plans
+      const rawPlans = Array.isArray(data.plans) ? data.plans : Array.isArray(data.tiers) ? data.tiers : [];
+      if (rawPlans.length > 0) {
+        data.plans = rawPlans.map((p: any, idx: number) => ({
+          name: typeof p?.name === "string" ? p.name : `Plan ${idx + 1}`,
+          price: typeof p?.price === "string" ? p.price : "$29",
+          period: typeof p?.period === "string" ? p.period : typeof p?.interval === "string" ? p.interval : "/mo",
+          originalPrice: typeof p?.originalPrice === "string" ? p.originalPrice : undefined,
+          badge: typeof p?.badge === "string" ? p.badge : undefined,
+          description: typeof p?.description === "string" ? p.description : "",
+          features: Array.isArray(p?.features) ? p.features.map(String) : ["All core features included"],
+          excludedFeatures: Array.isArray(p?.excludedFeatures) ? p.excludedFeatures.map(String) : undefined,
+          cta: p?.cta && typeof p.cta === "object" ? p.cta : p?.button && typeof p.button === "object" ? p.button : { label: "Get started", href: "/contact" },
+          featured: Boolean(p?.featured ?? p?.highlighted ?? idx === 1),
+          highlightNote: typeof p?.highlightNote === "string" ? p.highlightNote : undefined,
+        }));
+      } else {
+        data.plans = [
+          {
+            name: "Starter",
+            price: "$29",
+            period: "/mo",
+            description: "For individuals & emerging projects",
+            features: ["Up to 5 team members", "Standard analytics", "Community support"],
+            featured: false,
+            cta: { label: "Start Free Trial", href: "/contact" },
+          },
+          {
+            name: "Professional",
+            price: "$79",
+            period: "/mo",
+            badge: "Most Popular",
+            description: "For fast-scaling teams & modern businesses",
+            features: ["Unlimited projects", "Advanced AI tools", "24/7 Priority support", "Custom integrations"],
+            featured: true,
+            cta: { label: "Get Started", href: "/contact" },
+          },
+          {
+            name: "Enterprise",
+            price: "$199",
+            period: "/mo",
+            description: "For established organizations with custom needs",
+            features: ["Dedicated account manager", "Custom SLA & security", "SSO & SAML", "Unlimited capacity"],
+            featured: false,
+            cta: { label: "Contact Sales", href: "/contact" },
+          },
+        ];
+      }
+      break;
+    }
+
+    case "cta": {
+      const validCtaVariants = ["centered-card", "split-visual", "floating-card", "minimal-editorial"];
+      if (typeof data.variant !== "string" || !validCtaVariants.includes(data.variant)) {
+        data.variant = "centered-card";
+      }
+      if (!data.heading) data.heading = "Ready to elevate your workflow?";
+      if (!data.text && data.description) data.text = data.description;
+      if (!data.text) data.text = "Join thousands of satisfied teams building better web experiences today.";
+      const rawBtn = data.button || data.primaryButton || data.cta;
+      if (!rawBtn || typeof (rawBtn as Record<string, unknown>)?.label !== "string") {
+        data.button = { label: "Get Started Today", href: "/contact" };
+      } else {
+        data.button = rawBtn;
+      }
+      break;
+    }
+
+    case "features": {
+      const validFeaturesVariants = ["grid", "split", "pastel-icons", "minimal", "cards"];
+      if (typeof data.variant !== "string" || !validFeaturesVariants.includes(data.variant)) {
+        data.variant = "pastel-icons";
+      }
+      if (!data.heading) data.heading = "Engineered for high performance";
+      if (!Array.isArray(data.items) || data.items.length === 0) {
+        data.items = [
+          { icon: "bolt", iconColor: "orange", title: "Blazing Fast Speed", description: "Optimized for lightning-quick interaction and responsiveness." },
+          { icon: "shield", iconColor: "green", title: "Enterprise Security", description: "End-to-end encryption with advanced privacy protocols." },
+          { icon: "sparkles", iconColor: "purple", title: "Next-Gen AI", description: "Built-in intelligent automation tailored to your exact needs." },
+        ];
+      } else {
+        data.items = (data.items as any[]).map((item, idx) => ({
+          title: typeof item?.title === "string" ? item.title : `Feature ${idx + 1}`,
+          description: typeof item?.description === "string" ? item.description : "High-impact capabilities designed for modern growth.",
+          icon: typeof item?.icon === "string" ? item.icon : "sparkles",
+          iconColor: typeof item?.iconColor === "string" ? item.iconColor : "purple",
+          badge: typeof item?.badge === "string" ? item.badge : undefined,
+        }));
+      }
+      if (!data.columns) data.columns = 3;
+      if (!data.mobileColumns) data.mobileColumns = 1;
+      break;
+    }
+
+    case "services": {
+      const validServicesVariants = ["cards-grid", "bento-grid", "split-showcase", "interactive-list", "horizontal-cards", "minimal-numbered"];
+      if (typeof data.variant !== "string" || !validServicesVariants.includes(data.variant)) {
+        data.variant = "cards-grid";
+      }
+      if (!data.heading) data.heading = "Our Core Solutions";
+      if (!Array.isArray(data.items) || data.items.length === 0) {
+        data.items = [
+          { title: "Strategic Architecture", description: "Comprehensive roadmap and blueprinting tailored to business scale." },
+          { title: "End-to-End Implementation", description: "Pixel-perfect delivery with clean, production-ready engineering." },
+          { title: "24/7 Managed Growth", description: "Continuous optimization, performance monitoring, and proactive support." },
+        ];
+      }
+      if (!data.columns) data.columns = 3;
+      if (!data.mobileColumns) data.mobileColumns = 1;
+      break;
+    }
+
+    case "hero": {
+      const validHeroVariants = ["centered", "split", "split-left", "background-image", "video-bg", "gradient", "curved-bottom", "soft-card", "minimal-typography", "floating-cards", "asymmetric"];
+      if (typeof data.variant !== "string" || !validHeroVariants.includes(data.variant)) {
+        data.variant = data.backgroundImage ? "background-image" : "centered";
+      }
+      if (!data.heading) data.heading = "Transform Your Digital Vision";
+      if (!data.primaryCta || typeof (data.primaryCta as Record<string, unknown>)?.label !== "string") {
+        data.primaryCta = { label: "Get Started", href: "/contact" };
+      }
+      break;
+    }
+
+    case "faq": {
+      const validFaqVariants = ["accordion-classic", "two-column-grid", "split-sidebar", "minimal-numbered", "categorized-cards"];
+      if (typeof data.variant !== "string" || !validFaqVariants.includes(data.variant)) {
+        data.variant = "accordion-classic";
+      }
+      if (!data.heading) data.heading = "Frequently Asked Questions";
+      if (!Array.isArray(data.items) || data.items.length === 0) {
+        data.items = [
+          { question: "How quickly can we get started?", answer: "You can start immediately with our intuitive builder and 1-click publishing." },
+          { question: "Can I customize the sections later?", answer: "Yes, every single block, color, and typography style is fully customizable." },
+          { question: "Is support included?", answer: "Our dedicated engineering support team is available 24/7 for all tiers." },
+        ];
+      }
+      break;
+    }
+
+    case "testimonials": {
+      if (!data.heading) data.heading = "Loved by Industry Leaders";
+      if (!Array.isArray(data.items) || data.items.length === 0) {
+        data.items = [
+          { quote: "This platform completely revolutionized our digital presence in days.", name: "Sarah Jenkins", role: "VP of Product, Apex Digital" },
+          { quote: "The speed, aesthetic quality, and precision are truly second to none.", name: "David Chen", role: "Founder & CTO, Nexus AI" },
+        ];
+      }
+      break;
+    }
+
+    case "team": {
+      const validTeamVariants = ["grid-cards", "spotlight-featured", "minimal-editorial", "glass-overlay"];
+      if (typeof data.variant !== "string" || !validTeamVariants.includes(data.variant)) {
+        data.variant = "grid-cards";
+      }
+      if (!data.heading) data.heading = "Meet the Minds Behind the Platform";
+      if (!data.columns) data.columns = 3;
+      if (!data.mobileColumns) data.mobileColumns = 1;
+      break;
+    }
+
+    case "header": {
+      const validHeaderDesigns = ["logo-left", "centered", "classical", "floating", "transparent"];
+      if (typeof data.design !== "string" || !validHeaderDesigns.includes(data.design)) {
+        data.design = "logo-left";
+      }
+      if (!data.siteName) {
+        data.siteName = "Brand";
+      }
+      if (!Array.isArray(data.menu) || data.menu.length === 0) {
+        data.menu = [
+          { label: "Solutions", href: "#features" },
+          { label: "Features", href: "#features" },
+          { label: "Pricing", href: "#pricing" },
+          { label: "About", href: "#about" },
+        ];
+      } else {
+        // Cap menu items at 5 to prevent header overflow and ensure clean spacing
+        data.menu = (data.menu as Array<{ label?: string; href?: string }>).slice(0, 5).map((m, idx) => ({
+          label: typeof m?.label === "string" && m.label.trim() ? m.label.trim() : `Link ${idx + 1}`,
+          href: typeof m?.href === "string" && m.href.trim() ? m.href.trim() : "#",
+        }));
+      }
+      if (!data.cta || typeof (data.cta as Record<string, unknown>)?.label !== "string") {
+        data.cta = { label: "Get Started", href: "/contact" };
+      }
+      data.sticky = Boolean(data.sticky);
+      break;
+    }
+
+    case "footer": {
+      const validFooterDesigns = ["columns", "centered", "simple", "split", "minimalist"];
+      if (typeof data.design !== "string" || !validFooterDesigns.includes(data.design)) {
+        data.design = "columns";
+      }
+      if (!data.siteName) {
+        data.siteName = "Brand";
+      }
+      if (!Array.isArray(data.columns) || data.columns.length === 0) {
+        data.columns = [
+          { title: "Product", links: [{ label: "Features", href: "#features" }, { label: "Pricing", href: "#pricing" }] },
+          { title: "Company", links: [{ label: "About", href: "#about" }, { label: "Contact", href: "#contact" }] },
+        ];
+      }
+      if (!data.copyright) {
+        data.copyright = `© ${new Date().getFullYear()} ${data.siteName || "Company"}. All rights reserved.`;
+      }
+      break;
+    }
+  }
+
+  return data;
+}
+
 const SECTION_SCHEMAS_GUIDE = `
 VALID SECTION SCHEMAS & EXACT FIELD KEYS:
 1. "hero":
@@ -141,33 +397,31 @@ VALID SECTION SCHEMAS & EXACT FIELD KEYS:
      "minHeight": "screen"|"tall"|"compact"|"auto",
      "contentAlign": "center"|"left"|"right"
    }
-   NOTE FOR HERO BACKGROUND IMAGES:
-   - When asked to add a background image or fully covered dummy image to Hero:
-     Set "backgroundImage": { "url": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=2000&q=80", "alt": "Hero background" }
-     Set "imagePosition": "background"
-     Set "variant": "background-image"
-     Set "bgImagePosition": "cover"
-     Set "bgOverlayType": "dark"
-     Set "overlayOpacity": 50
-     Set "minHeight": "screen"
 2. "features":
-   data: { "variant": "pastel-icons"|"cards-grid", "heading": "...", "intro": "...", "columns": 3, "items": [ { "icon": "bolt"|"star"|"shield"|"rocket"|"layers"|"sparkles"|"check", "iconColor": "orange"|"green"|"yellow"|"cyan"|"purple", "title": "...", "description": "...", "badge": "..." } ] }
+   data: { "variant": "pastel-icons"|"grid"|"split"|"cards"|"minimal", "heading": "...", "intro": "...", "columns": 3, "items": [ { "icon": "bolt"|"star"|"shield"|"rocket"|"layers"|"sparkles"|"check", "iconColor": "orange"|"green"|"yellow"|"cyan"|"purple", "title": "...", "description": "...", "badge": "..." } ] }
 3. "services":
-   data: { "variant": "cards-grid", "heading": "...", "intro": "...", "columns": 3, "items": [ { "title": "...", "description": "...", "badge": "...", "features": ["..."] } ] }
+   data: { "variant": "cards-grid"|"bento-grid"|"split-showcase"|"interactive-list"|"horizontal-cards"|"minimal-numbered", "heading": "...", "intro": "...", "columns": 3, "items": [ { "title": "...", "description": "...", "badge": "...", "features": ["..."] } ] }
 4. "stats":
-   data: { "variant": "card-grid", "heading": "...", "columns": 4, "items": [ { "value": "99.9%", "label": "...", "description": "..." } ] }
+   data: { "heading": "...", "items": [ { "value": "99.9%", "label": "Uptime Guarantee" } ] }
 5. "pricing":
-   data: { "variant": "cards", "heading": "...", "intro": "...", "tiers": [ { "name": "...", "price": "$29", "interval": "/mo", "description": "...", "badge": "Popular", "highlighted": true, "features": ["..."], "button": { "label": "Get started", "href": "/contact" } } ] }
+   data: {
+     "variant": "cards-grid"|"minimal-monochrome"|"spotlight-tier"|"horizontal-rows",
+     "heading": "...",
+     "intro": "...",
+     "plans": [
+       { "name": "Starter", "price": "$29", "period": "/mo", "badge": "Popular", "featured": true, "features": ["Feature 1", "Feature 2"], "cta": { "label": "Get started", "href": "/contact" } }
+     ]
+   }
 6. "testimonials":
-   data: { "variant": "grid", "heading": "...", "intro": "...", "columns": 3, "items": [ { "quote": "...", "name": "...", "role": "...", "rating": 5, "avatar": { "url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80", "alt": "Avatar" } } ] }
+   data: { "heading": "...", "items": [ { "quote": "...", "name": "...", "role": "..." } ] }
 7. "team":
-   data: { "variant": "grid", "heading": "...", "intro": "...", "columns": 4, "members": [ { "name": "...", "role": "...", "bio": "...", "avatar": { "url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80", "alt": "Team Member" } } ] }
+   data: { "variant": "grid-cards"|"spotlight-featured"|"minimal-editorial"|"glass-overlay", "heading": "...", "intro": "...", "columns": 3, "members": [ { "name": "...", "role": "...", "bio": "...", "avatar": { "url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80", "alt": "Team Member" } } ] }
 8. "marquee":
    data: { "variant": "gradient-pill", "speed": "normal", "direction": "left", "items": [ { "text": "...", "badge": "..." } ] }
 9. "carousel":
    data: { "variant": "hero-slider", "autoplay": true, "slides": [ { "title": "...", "subtitle": "...", "description": "..." } ] }
 10. "faq":
-   data: { "variant": "accordion", "heading": "...", "intro": "...", "items": [ { "question": "...", "answer": "..." } ] }
+   data: { "variant": "accordion-classic"|"two-column-grid"|"split-sidebar"|"minimal-numbered"|"categorized-cards", "heading": "...", "intro": "...", "items": [ { "question": "...", "answer": "..." } ] }
 11. "cta":
    data: { "variant": "centered-card"|"split-visual"|"floating-card"|"minimal-editorial", "heading": "...", "text": "...", "button": { "label": "Get started", "href": "/contact" } }
 12. "header":
@@ -175,13 +429,10 @@ VALID SECTION SCHEMAS & EXACT FIELD KEYS:
    settings: { "customColors": { "background": "#rrggbb" } }
 
 STOCK / DUMMY IMAGE GUIDELINES:
-- Whenever user asks for dummy images, stock photos, background images, product preview, mockups, or avatars:
-  ALWAYS use high-quality Unsplash image URLs:
-  - Tech / Abstract / Modern Dark Hero: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=2000&q=80"
-  - Interior / Living / Space: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=2000&q=80"
-  - Vibrant Gradient / Mesh: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=2000&q=80"
-  - SaaS Dashboard / Analytics: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80"
-  - Avatars / Team: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80"
+- Tech / Dark Hero: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=2000&q=80"
+- Modern Architecture / Living: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=2000&q=80"
+- Vibrant Gradient: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=2000&q=80"
+- SaaS Dashboard / Analytics: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80"
 `;
 
 const SYSTEM_PROMPT_ADD_SECTION = `You are a world-class AI website copywriter and UI designer.
@@ -194,7 +445,7 @@ ${SECTION_SCHEMAS_GUIDE}
 3. Output format must be:
 {
   "summary": "Brief 1-sentence summary of the new section created",
-  "type": "hero"|"features"|"services"|"pricing"|"testimonials"|"faq"|"cta"|"team"|"marquee"|"carousel"|"stats",
+  "type": "header"|"footer"|"hero"|"features"|"services"|"pricing"|"testimonials"|"faq"|"cta"|"team"|"marquee"|"carousel"|"stats",
   "settings": { "background": "default", "hideOnMobile": false, "spacing": "default" },
   "data": { ... }
 }`;
@@ -224,28 +475,44 @@ ${SECTION_SCHEMAS_GUIDE}
   }
 }`;
 
-const SYSTEM_PROMPT_PAGE = `You are a world-class AI website designer and conversion copywriter for a modern 2026 website builder.
-Your job is to generate or update page sections based strictly on the user's instructions.
+const SYSTEM_PROMPT_PAGE = `You are a world-class AI website designer, conversion copywriter, and assistant for a modern 2026 website builder.
+Your job is to analyze the user prompt and either answer conversationally or generate/redesign page sections.
 
-${SECTION_SCHEMAS_GUIDE}
-
-CRITICAL RULES:
-1. When generating a fresh landing page, output 4 to 6 modern sections. Do NOT include "header" or "footer" in the array.
-2. For "cta", "variant" MUST ONLY be one of: "centered-card", "split-visual", "floating-card", "minimal-editorial".
-3. Output format:
+MODE A: CONVERSATIONAL / QUESTION / GREETINGS / ADVICE / FEEDBACK (e.g. "hi", "hello", "what can you do?", "how do I change colors?", "is my hero section good?", "give me tips for a bakery site"):
+Output JSON:
 {
-  "summary": "Brief 1-sentence summary of the changes",
+  "intent": "chat",
+  "summary": "AI Copilot Response",
+  "chatReply": "Direct, helpful, friendly answer addressing the user's question or greeting without modifying their canvas."
+}
+
+MODE B: PAGE CREATION / FULL PAGE REDESIGN / OVERHAUL (e.g. "Build an AI SaaS landing page", "Redesign page in dark luxury style", "Create a gym website with pricing"):
+Output JSON:
+{
+  "intent": "page",
+  "summary": "Brief 1-sentence summary of the page generated",
   "sections": [
     {
-      "type": "hero",
-      "settings": { "background": "default", "hideOnMobile": false, "spacing": "relaxed" },
+      "type": "hero"|"features"|"services"|"pricing"|"testimonials"|"faq"|"cta"|"team"|"marquee"|"carousel"|"stats",
+      "settings": { "background": "default"|"surface"|"primary"|"dark", "hideOnMobile": false, "spacing": "default"|"relaxed" },
       "data": { ... }
-    },
-    ...
+    }
   ]
-}`;
+}
+
+CRITICAL RULES:
+1. Always output ONLY valid JSON without Markdown code fences.
+2. If the user is asking a question, greeting, or inquiring without explicitly asking to build/create/redesign/generate sections, set "intent": "chat" and provide a helpful "chatReply". DO NOT generate random sections.
+3. For page generation, output 4 to 6 rich, high-converting sections (excluding header and footer).
+${SECTION_SCHEMAS_GUIDE}`;
 
 const SECTION_KEYWORDS: Record<string, string> = {
+  header: "header",
+  navbar: "header",
+  nav: "header",
+  menu: "header",
+  footer: "footer",
+  copyright: "footer",
   hero: "hero",
   banner: "hero",
   feature: "features",
@@ -297,7 +564,20 @@ export class AiGeneratorService {
   /**
    * Calls OpenAI Chat Completions API using native fetch.
    */
-  private async callOpenAi(messages: { role: "system" | "user"; content: string }[], temperature = 0.7): Promise<string> {
+  /**
+   * Calls OpenAI Chat Completions API using native fetch.
+   */
+  private async callOpenAi(messages: { role: "system" | "user" | "assistant"; content: string }[], temperature = 0.7): Promise<string> {
+    // OpenAI response_format json_object requires the string 'json' somewhere in the prompt/messages
+    const hasJsonWord = messages.some((m) => m.content.toLowerCase().includes("json"));
+    const safeMessages = hasJsonWord
+      ? messages
+      : messages.map((m, idx) =>
+          idx === 0
+            ? { ...m, content: `${m.content}\n\nIMPORTANT: Respond strictly in valid JSON format.` }
+            : m,
+        );
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -306,7 +586,7 @@ export class AiGeneratorService {
       },
       body: JSON.stringify({
         model: this.model,
-        messages,
+        messages: safeMessages,
         temperature,
         response_format: { type: "json_object" },
         max_tokens: 3000,
@@ -343,16 +623,60 @@ export class AiGeneratorService {
    * Generates AI suggestion for a single section, adding a section, or full page.
    */
   async generate(options: GenerateAiOptions): Promise<AiSuggestionPayload> {
-    const { prompt, scope, sectionId, currentSection, currentSections = [] } = options;
+    const { prompt, scope, sectionId, currentSection, currentSections = [], history = [] } = options;
     const lowerPrompt = prompt.toLowerCase().trim();
 
-    // Check if user specifically intends to ADD a brand new section to the page
-    const isExplicitAddSectionCommand =
-      /\b(add|insert|create|append)\s+(a\s+|an\s+|new\s+)?(hero|features|services|pricing|testimonials|faq|cta|team|marquee|carousel|stats|contact)\b/i.test(lowerPrompt) ||
-      /\b(add|insert|create|append)\s+(a\s+|an\s+|new\s+)?section\b/i.test(lowerPrompt) ||
-      lowerPrompt.startsWith("add section") ||
-      lowerPrompt.startsWith("new section");
+    // Fast handling for common greetings
+    const GREETING_REGEX = /^(hi|hello|hey|greetings|hola|good\s+(morning|afternoon|evening)|sup|yo|test|howdy)[\s!.]*$/i;
+    const HELP_QUESTION_REGEX = /^(who\s+are\s+you|what\s+can\s+you\s+do|how\s+(does\s+this\s+work|to\s+use|can\s+i\s+use|do\s+i)|help me|help)[\s?!.]*$/i;
 
+    if (GREETING_REGEX.test(lowerPrompt)) {
+      return {
+        id: crypto.randomUUID(),
+        prompt,
+        summary: "Hello! I am your AI Website Copilot.",
+        chatReply: "Hello! I am your AI Website Copilot.\n\nHere are some things you can ask me to do:\n• Generate a full landing page (e.g. 'Build an AI SaaS landing page')\n• Add a new section (e.g. 'Add a 3-tier pricing table')\n• Click any section on the canvas to customize its copy, style, or background.",
+        target: { scope: "chat" },
+        before: [],
+        after: [],
+      };
+    }
+
+    if (HELP_QUESTION_REGEX.test(lowerPrompt)) {
+      return {
+        id: crypto.randomUUID(),
+        prompt,
+        summary: "AI Website Copilot Guide",
+        chatReply: "I can help you build and refine your website:\n\n1. Whole Page Mode: Ask to build a full page (e.g. 'Modern AI SaaS', 'Luxury Agency', 'Bakery Shop').\n2. Section Editing: Click on any section on the canvas to edit its copy, colors, or images.\n3. Add Sections: Ask to 'Add FAQ section' or 'Insert team members'.\n4. Live Previews: Every generation includes a visual live preview with Accept / Reject controls.",
+        target: { scope: "chat" },
+        before: [],
+        after: [],
+      };
+    }
+
+    // Helper to build OpenAI message chain with up to 10 previous conversation turns
+    const buildMessages = (systemPrompt: string, userPromptText: string) => {
+      const msgs: { role: "system" | "user" | "assistant"; content: string }[] = [
+        { role: "system", content: systemPrompt },
+      ];
+
+      if (Array.isArray(history) && history.length > 0) {
+        const recentHistory = history.slice(-10);
+        for (const item of recentHistory) {
+          if (item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string") {
+            msgs.push({
+              role: item.role,
+              content: item.content,
+            });
+          }
+        }
+      }
+
+      msgs.push({ role: "user", content: userPromptText });
+      return msgs;
+    };
+
+    // Check if a specific section type is mentioned in the prompt
     let requestedSectionType: string | null = null;
     for (const [kw, stype] of Object.entries(SECTION_KEYWORDS)) {
       if (new RegExp(`\\b${kw}\\b`, "i").test(lowerPrompt)) {
@@ -361,26 +685,44 @@ export class AiGeneratorService {
       }
     }
 
+    const isExplicitAddSectionCommand =
+      /\b(add|insert|create|append|build|make|generate|design)\s+(a\s+|an\s+|new\s+|beautiful\s+|beautifull\s+|modern\s+)?(header|navbar|nav|footer|hero|features|services|pricing|testimonials|faq|cta|team|marquee|carousel|stats|contact)\b/i.test(lowerPrompt) ||
+      /\b(add|insert|create|append|build|make|generate)\s+(a\s+|an\s+|new\s+)?section\b/i.test(lowerPrompt) ||
+      lowerPrompt.startsWith("add section") ||
+      lowerPrompt.startsWith("new section") ||
+      lowerPrompt.startsWith("build header") ||
+      lowerPrompt.startsWith("create header") ||
+      lowerPrompt.startsWith("add header") ||
+      lowerPrompt.startsWith("build footer") ||
+      lowerPrompt.startsWith("create footer") ||
+      lowerPrompt.startsWith("add footer") ||
+      (Boolean(requestedSectionType) && !lowerPrompt.includes("full page") && !lowerPrompt.includes("entire page") && !lowerPrompt.includes("landing page") && !lowerPrompt.includes("website"));
+
+    const isTargetingHeader = requestedSectionType === "header" || lowerPrompt.includes("header") || lowerPrompt.includes("navbar") || lowerPrompt.includes("nav bar");
+    const isTargetingFooter = requestedSectionType === "footer" || lowerPrompt.includes("footer") || lowerPrompt.includes("copyright");
+
+    // Check if target section already exists on page
+    const existingTargetSection =
+      currentSection ||
+      (isTargetingHeader ? currentSections.find((s) => s.type === "header") : null) ||
+      (isTargetingFooter ? currentSections.find((s) => s.type === "footer") : null) ||
+      (requestedSectionType ? currentSections.find((s) => s.type === requestedSectionType) : null);
+
     // Determine if this should generate an entirely NEW section rather than editing the current section
-    const isEditingCurrentSection =
-      Boolean(currentSection) &&
-      (scope === "section" || requestedSectionType === currentSection?.type || !isExplicitAddSectionCommand);
+    const isEditingCurrentSection = Boolean(existingTargetSection) && (scope === "section" || Boolean(requestedSectionType));
 
     const shouldAddSection =
       !isEditingCurrentSection &&
-      ((isExplicitAddSectionCommand && Boolean(requestedSectionType)) ||
-        (currentSection && requestedSectionType && requestedSectionType !== currentSection.type));
+      Boolean(requestedSectionType) &&
+      (isExplicitAddSectionCommand || scope === "page");
 
-    if (shouldAddSection && requestedSectionType) {
+    if (shouldAddSection && requestedSectionType && !existingTargetSection) {
       const userMessage = `Requested Section Type to Create: "${requestedSectionType}"
 User Prompt: "${prompt}"
 
 Please create a complete, stunning, high-converting "${requestedSectionType}" section JSON for this instruction.`;
 
-      const rawAiResponse = await this.callOpenAi([
-        { role: "system", content: SYSTEM_PROMPT_ADD_SECTION },
-        { role: "user", content: userMessage },
-      ]);
+      const rawAiResponse = await this.callOpenAi(buildMessages(SYSTEM_PROMPT_ADD_SECTION, userMessage));
 
       let parsed: { summary?: string; type?: string; settings?: Record<string, unknown>; data?: Record<string, unknown> };
       try {
@@ -391,13 +733,14 @@ Please create a complete, stunning, high-converting "${requestedSectionType}" se
 
       const finalType = parsed.type || requestedSectionType;
       const cleanSettings = sanitizeSectionSettings(parsed.settings || {});
+      const cleanData = sanitizeSectionData(finalType, parsed.data || {});
 
       const newSection: SectionEnvelope = {
         id: crypto.randomUUID(),
         type: finalType,
         hidden: false,
         settings: cleanSettings,
-        data: parsed.data || {},
+        data: cleanData,
       };
 
       return {
@@ -411,22 +754,11 @@ Please create a complete, stunning, high-converting "${requestedSectionType}" se
     }
 
     // SCENARIO 2: EDIT EXISTING SECTION IN PLACE
-    const isTargetingHeader = lowerPrompt.includes("header") || lowerPrompt.includes("navbar") || lowerPrompt.includes("nav bar");
-    const isTargetingFooter = lowerPrompt.includes("footer") || lowerPrompt.includes("copyright");
-
-    if (scope === "section" || isEditingCurrentSection || (scope === "page" && currentSections.length > 0 && (isTargetingHeader || isTargetingFooter))) {
-      let targetSection = currentSection;
+    if (scope === "section" || isEditingCurrentSection || (scope === "page" && Boolean(existingTargetSection) && Boolean(requestedSectionType))) {
+      let targetSection = existingTargetSection;
 
       if (!targetSection && sectionId) {
         targetSection = currentSections.find((s) => s.id === sectionId);
-      }
-
-      if (!targetSection && isTargetingHeader) {
-        targetSection = currentSections.find((s) => s.type === "header");
-      }
-
-      if (!targetSection && isTargetingFooter) {
-        targetSection = currentSections.find((s) => s.type === "footer");
       }
 
       if (targetSection) {
@@ -438,22 +770,31 @@ User Instruction: "${prompt}"
 
 Please modify this section data and settings to satisfy the user instruction. If changing color/background, use valid 6-digit hex in settings.customColors.`;
 
-        const rawAiResponse = await this.callOpenAi([
-          { role: "system", content: SYSTEM_PROMPT_SECTION_EDIT },
-          { role: "user", content: userMessage },
-        ]);
+        const rawAiResponse = await this.callOpenAi(buildMessages(SYSTEM_PROMPT_SECTION_EDIT, userMessage));
 
-        let parsed: { summary?: string; data?: Record<string, unknown>; settings?: Record<string, unknown> };
+        let parsed: { summary?: string; chatReply?: string; intent?: string; data?: Record<string, unknown>; settings?: Record<string, unknown> };
         try {
           parsed = JSON.parse(rawAiResponse);
         } catch {
           throw new AppError(502, "Failed to parse structured JSON response from AI.");
         }
 
-        const updatedData = {
+        if (parsed.intent === "chat" || (parsed.chatReply && !parsed.data)) {
+          return {
+            id: crypto.randomUUID(),
+            prompt,
+            summary: parsed.chatReply || parsed.summary || "AI Copilot Response",
+            chatReply: parsed.chatReply || parsed.summary,
+            target: { scope: "chat" },
+            before: [],
+            after: [],
+          };
+        }
+
+        const updatedData = sanitizeSectionData(targetSection.type, {
           ...targetSection.data,
           ...(parsed.data || {}),
-        };
+        });
 
         const rawMergedSettings = {
           ...targetSection.settings,
@@ -481,22 +822,36 @@ Please modify this section data and settings to satisfy the user instruction. If
       }
     }
 
-    // SCENARIO 3: WHOLE PAGE GENERATION
+    // SCENARIO 3: WHOLE PAGE GENERATION OR CONVERSATIONAL QUERY
     const userMessage = `User Website Goal / Prompt: "${prompt}"
 Current Sections on Page: ${currentSections.map((s) => s.type).join(", ") || "None (Fresh Page)"}
 
-Please generate a high-converting, complete landing page (4 to 6 rich sections) matching the prompt.`;
+Please analyze the user's intent. If it's conversational / advice / questions, return "intent": "chat" and "chatReply". If it's page generation, output "intent": "page" and "sections".`;
 
-    const rawAiResponse = await this.callOpenAi([
-      { role: "system", content: SYSTEM_PROMPT_PAGE },
-      { role: "user", content: userMessage },
-    ]);
+    const rawAiResponse = await this.callOpenAi(buildMessages(SYSTEM_PROMPT_PAGE, userMessage));
 
-    let parsed: { summary?: string; sections?: Array<{ type: string; settings?: Record<string, unknown>; data: Record<string, unknown> }> };
+    let parsed: {
+      intent?: "chat" | "page";
+      summary?: string;
+      chatReply?: string;
+      sections?: Array<{ type: string; settings?: Record<string, unknown>; data: Record<string, unknown> }>;
+    };
     try {
       parsed = JSON.parse(rawAiResponse);
     } catch {
       throw new AppError(502, "Failed to parse structured JSON response from AI.");
+    }
+
+    if (parsed.intent === "chat" || (parsed.chatReply && (!parsed.sections || parsed.sections.length === 0))) {
+      return {
+        id: crypto.randomUUID(),
+        prompt,
+        summary: parsed.chatReply || parsed.summary || "AI Copilot Response",
+        chatReply: parsed.chatReply || parsed.summary,
+        target: { scope: "chat" },
+        before: [],
+        after: [],
+      };
     }
 
     const generatedList = Array.isArray(parsed.sections) ? parsed.sections : [];
@@ -504,15 +859,63 @@ Please generate a high-converting, complete landing page (4 to 6 rich sections) 
       throw new AppError(502, "AI did not generate any page sections. Please try with a more specific prompt.");
     }
 
-    const afterSections: SectionEnvelope[] = generatedList
+    // Preserve existing header from page, or create default header if none
+    const existingHeader = currentSections.find((s) => s.type === "header");
+    const headerSection: SectionEnvelope = existingHeader
+      ? structuredClone(existingHeader)
+      : {
+          id: crypto.randomUUID(),
+          type: "header",
+          hidden: false,
+          settings: sanitizeSectionSettings({}),
+          data: sanitizeSectionData("header", {
+            design: "logo-left",
+            siteName: "Modulus",
+            menu: [
+              { label: "Solutions", href: "#features" },
+              { label: "About us", href: "#about" },
+              { label: "Pricing", href: "#pricing" },
+              { label: "Resources", href: "#faq" },
+            ],
+            sticky: false,
+          }),
+        };
+
+    // Preserve existing footer from page, or create default footer if none
+    const existingFooter = currentSections.find((s) => s.type === "footer");
+    const footerSection: SectionEnvelope = existingFooter
+      ? structuredClone(existingFooter)
+      : {
+          id: crypto.randomUUID(),
+          type: "footer",
+          hidden: false,
+          settings: sanitizeSectionSettings({}),
+          data: sanitizeSectionData("footer", {
+            design: "columns",
+            siteName: "Modulus",
+            columns: [
+              { title: "Product", links: [{ label: "Features", href: "#features" }, { label: "Pricing", href: "#pricing" }] },
+              { title: "Company", links: [{ label: "About", href: "#about" }, { label: "Contact", href: "#contact" }] },
+            ],
+            social: [],
+            copyright: `© ${new Date().getFullYear()} All rights reserved.`,
+          }),
+        };
+
+    const bodySections: SectionEnvelope[] = generatedList
       .filter((item) => item.type !== "header" && item.type !== "footer")
-      .map((item) => ({
-        id: crypto.randomUUID(),
-        type: item.type || "features",
-        hidden: false,
-        settings: sanitizeSectionSettings(item.settings || {}),
-        data: item.data || {},
-      }));
+      .map((item) => {
+        const itemType = item.type || "features";
+        return {
+          id: crypto.randomUUID(),
+          type: itemType,
+          hidden: false,
+          settings: sanitizeSectionSettings(item.settings || {}),
+          data: sanitizeSectionData(itemType, item.data || {}),
+        };
+      });
+
+    const afterSections: SectionEnvelope[] = [headerSection, ...bodySections, footerSection];
 
     return {
       id: crypto.randomUUID(),
