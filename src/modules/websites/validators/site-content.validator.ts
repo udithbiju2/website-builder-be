@@ -540,6 +540,89 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .max(24)
       .required(),
   }),
+  carousel: Joi.object({
+    variant: Joi.string()
+      .valid(
+        "cards",
+        "hero-slider",
+        "showcase",
+        "minimal-editorial",
+        "image-gallery",
+        "image-strip",
+        "image-coverflow",
+      )
+      .optional(),
+    eyebrow: optionalText(80),
+    heading: optionalText(200),
+    intro: optionalText(500),
+    badge: optionalText(80),
+    slides: Joi.array()
+      .items(
+        Joi.object({
+          title: text(120).required(),
+          subtitle: optionalText(120),
+          description: optionalText(600),
+          caption: optionalText(300),
+          badge: optionalText(60),
+          image: image.optional(),
+          button: link.optional(),
+          secondaryButton: link.optional(),
+        }),
+      )
+      .min(1)
+      .max(12)
+      .required(),
+    autoPlay: Joi.boolean().optional(),
+    interval: Joi.number().min(2).max(30).optional(),
+    showArrows: Joi.boolean().optional(),
+    showDots: Joi.boolean().optional(),
+    showThumbnails: Joi.boolean().optional(),
+    imageAspect: Joi.string().valid("16:9", "4:3", "1:1", "21:9", "3:4").optional(),
+    columns: columns.optional(),
+    pauseOnHover: Joi.boolean().optional(),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
+  }),
+  marquee: Joi.object({
+    variant: Joi.string()
+      .valid("ticker-text", "cards-stream", "pill-badges", "dual-directional")
+      .optional(),
+    eyebrow: optionalText(80),
+    heading: optionalText(200),
+    intro: optionalText(500),
+    items: Joi.array()
+      .items(
+        Joi.object({
+          text: text(120).required(),
+          badge: optionalText(60),
+          icon: Joi.string().valid(...ICON_NAMES).optional(),
+          link: Joi.string().max(255).optional(),
+          subtext: optionalText(120),
+        }),
+      )
+      .min(1)
+      .max(24)
+      .required(),
+    secondaryItems: Joi.array()
+      .items(
+        Joi.object({
+          text: text(120).required(),
+          badge: optionalText(60),
+          icon: Joi.string().valid(...ICON_NAMES).optional(),
+          link: Joi.string().max(255).optional(),
+          subtext: optionalText(120),
+        }),
+      )
+      .max(24)
+      .optional(),
+    speed: Joi.string().valid("slow", "normal", "fast").optional(),
+    direction: Joi.string().valid("left", "right").optional(),
+    pauseOnHover: Joi.boolean().optional(),
+    gradientFades: Joi.boolean().optional(),
+    fontSize: Joi.string().valid("small", "medium", "large", "huge").optional(),
+  }),
 };
 
 export const sectionSchema = Joi.object({

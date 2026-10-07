@@ -133,6 +133,8 @@ export const SECTION_TYPES = [
   "pricing",
   "media",
   "team",
+  "carousel",
+  "marquee",
 ] as const;
 
 export type FontKey = (typeof FONT_KEYS)[number];
@@ -528,6 +530,65 @@ export type SectionDataMap = {
         url: string;
       }[];
     }[];
+  };
+  carousel: {
+    variant?:
+      | "cards"
+      | "hero-slider"
+      | "showcase"
+      | "minimal-editorial"
+      | "image-gallery"
+      | "image-strip"
+      | "image-coverflow";
+    eyebrow?: string;
+    heading?: string;
+    intro?: string;
+    badge?: string;
+    slides: {
+      title: string;
+      subtitle?: string;
+      description?: string;
+      caption?: string;
+      badge?: string;
+      image?: ImageRef;
+      button?: LinkRef;
+      secondaryButton?: LinkRef;
+    }[];
+    autoPlay?: boolean;
+    interval?: number;
+    showArrows?: boolean;
+    showDots?: boolean;
+    showThumbnails?: boolean;
+    imageAspect?: "16:9" | "4:3" | "1:1" | "21:9" | "3:4";
+    columns?: 1 | 2 | 3 | 4 | 5 | 6;
+    pauseOnHover?: boolean;
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    align?: "left" | "center";
+  };
+  marquee: {
+    variant?: "ticker-text" | "cards-stream" | "pill-badges" | "dual-directional";
+    eyebrow?: string;
+    heading?: string;
+    intro?: string;
+    items: {
+      text: string;
+      badge?: string;
+      icon?: IconName;
+      link?: string;
+      subtext?: string;
+    }[];
+    secondaryItems?: {
+      text: string;
+      badge?: string;
+      icon?: IconName;
+      link?: string;
+      subtext?: string;
+    }[];
+    speed?: "slow" | "normal" | "fast";
+    direction?: "left" | "right";
+    pauseOnHover?: boolean;
+    gradientFades?: boolean;
+    fontSize?: "small" | "medium" | "large" | "huge";
   };
 };
 
