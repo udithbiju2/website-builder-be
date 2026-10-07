@@ -1,0 +1,11 @@
+/// Singleton (id = "default"), managed by the Super Admin.
+model AiConfig {
+  id                 String   @id @default("default") @db.VarChar(50)
+  /// OpenAI API key, AES-256-GCM encrypted with APP_ENCRYPTION_KEY.
+  openaiApiKeyCipher String?  @db.Text
+  model              String   @default("gpt-4o-mini") @db.VarChar(100)
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("ai_config")
+}

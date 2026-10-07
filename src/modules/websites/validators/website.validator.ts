@@ -145,3 +145,21 @@ export const saveDraftSchema = Joi.object({
       "array.hasUnknown": 'The website needs a home page with the URL "/"',
     }),
 });
+
+export const generateAiSuggestionSchema = Joi.object({
+  prompt: Joi.string().trim().min(1).max(2000).required(),
+  scope: Joi.string().valid("section", "page").required(),
+  sectionId: Joi.string().trim().max(64).optional(),
+  currentSection: sectionSchema.optional(),
+  currentSections: Joi.array().items(sectionSchema).max(60).optional(),
+  history: Joi.array()
+    .items(
+      Joi.object({
+        role: Joi.string().valid("user", "assistant").required(),
+        content: Joi.string().trim().max(3000).required(),
+      })
+    )
+    .max(10)
+    .optional(),
+});
+

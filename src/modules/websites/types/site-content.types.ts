@@ -133,6 +133,8 @@ export const SECTION_TYPES = [
   "pricing",
   "media",
   "team",
+  "carousel",
+  "marquee",
 ] as const;
 
 export type FontKey = (typeof FONT_KEYS)[number];
@@ -342,29 +344,113 @@ export type SectionDataMap = {
   };
   services: {
     heading: string;
+    eyebrow?: string;
     intro?: string;
+    variant?:
+      | "cards-grid"
+      | "bento-grid"
+      | "split-showcase"
+      | "interactive-list"
+      | "horizontal-cards"
+      | "minimal-numbered";
+    cardStyle?: "surface" | "bordered" | "flat" | "glass" | "glow" | "elevated" | "gradient";
+    iconStyle?: "pastel-circle" | "square-badge" | "minimal-accent" | "colored-circle" | "glow-icon" | "none";
+    imageAspect?: "16:9" | "4:3" | "1:1" | "21:9" | "auto";
+    align?: "left" | "center";
     columns: GridColumns;
     mobileColumns: GridColumns;
-    items: { title: string; description: string; image?: ImageRef; link?: LinkRef }[];
+    items: {
+      title: string;
+      description: string;
+      badge?: string;
+      badgeColor?: string;
+      icon?: IconName | string;
+      iconColor?: string;
+      image?: ImageRef;
+      price?: string;
+      duration?: string;
+      features?: string[];
+      link?: LinkRef;
+      secondaryLink?: LinkRef;
+      backgroundColor?: string;
+      featured?: boolean;
+    }[];
+    splitPosition?: "left" | "right";
+    splitImage?: ImageRef;
+    splitTagline?: string;
+    splitCta?: LinkRef;
+    secondaryCta?: LinkRef;
+    bottomCta?: LinkRef;
+    bottomSecondaryCta?: LinkRef;
+    showBadges?: boolean;
+    showIcons?: boolean;
+    showImages?: boolean;
+    showPrices?: boolean;
+    showBullets?: boolean;
+    showNumbers?: boolean;
   };
   testimonials: {
     heading: string;
     items: { quote: string; name: string; role?: string }[];
   };
   faq: {
+    variant?: "accordion-classic" | "two-column-grid" | "split-sidebar" | "minimal-numbered" | "categorized-cards";
+    eyebrow?: string;
     heading: string;
     intro?: string;
-    items: { question: string; answer: string }[];
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated";
+    align?: "left" | "center";
+    supportCta?: {
+      title?: string;
+      description?: string;
+      link?: LinkRef;
+    };
+    items: {
+      question: string;
+      answer: string;
+      category?: string;
+      badge?: string;
+      isOpenDefault?: boolean;
+    }[];
   };
-  cta: { heading: string; text?: string; button: LinkRef };
+  cta: {
+    variant?: "centered-card" | "split-visual" | "floating-card" | "minimal-editorial";
+    eyebrow?: string;
+    heading: string;
+    text?: string;
+    button: LinkRef;
+    secondaryButton?: LinkRef;
+    trustBadges?: string[];
+    highlightMetric?: {
+      value: string;
+      label: string;
+      subtext?: string;
+    };
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    align?: "left" | "center";
+  };
   contact: {
+    variant?: "split-form" | "cards-hub" | "minimal-editorial" | "floating-glass";
+    eyebrow?: string;
     heading: string;
     text?: string;
     email?: string;
     phone?: string;
     address?: string;
+    officeHours?: string;
+    responseTime?: string;
     showForm: boolean;
     submitLabel: string;
+    formHeading?: string;
+    serviceOptions?: string[];
+    channels?: {
+      label: string;
+      value: string;
+      description?: string;
+      icon?: "mail" | "phone" | "chat" | "user";
+    }[];
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    align?: "left" | "center";
   };
   text: { heading?: string; body: string };
   gallery: {
@@ -385,16 +471,29 @@ export type SectionDataMap = {
   };
   stats: { heading?: string; intro?: string; items: { value: string; label: string }[] };
   pricing: {
+    variant?: "cards-grid" | "minimal-monochrome" | "spotlight-tier" | "horizontal-rows";
+    eyebrow?: string;
     heading: string;
     intro?: string;
+    billingCycleLabel?: string;
+    discountBadge?: string;
+    footerNote?: string;
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    columns?: 1 | 2 | 3 | 4;
+    mobileColumns?: 1 | 2;
+    align?: "left" | "center";
     plans: {
       name: string;
       price: string;
       period?: string;
+      originalPrice?: string;
+      badge?: string;
       description?: string;
       features: string[];
+      excludedFeatures?: string[];
       cta?: LinkRef;
       featured: boolean;
+      highlightNote?: string;
     }[];
   };
   media: {
@@ -408,11 +507,88 @@ export type SectionDataMap = {
     width: "contained" | "wide";
   };
   team: {
+    variant?: "grid-cards" | "spotlight-featured" | "minimal-editorial" | "glass-overlay";
+    eyebrow?: string;
+    badge?: string;
     heading: string;
     intro?: string;
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    align?: "left" | "center";
     columns: GridColumns;
     mobileColumns: GridColumns;
-    members: { name: string; role?: string; bio?: string; photo?: ImageRef; link?: LinkRef }[];
+    members: {
+      name: string;
+      role?: string;
+      department?: string;
+      bio?: string;
+      location?: string;
+      photo?: ImageRef;
+      tags?: string[];
+      link?: LinkRef;
+      socialLinks?: {
+        platform: "linkedin" | "twitter" | "github" | "email" | "link";
+        url: string;
+      }[];
+    }[];
+  };
+  carousel: {
+    variant?:
+      | "cards"
+      | "hero-slider"
+      | "showcase"
+      | "minimal-editorial"
+      | "image-gallery"
+      | "image-strip"
+      | "image-coverflow";
+    eyebrow?: string;
+    heading?: string;
+    intro?: string;
+    badge?: string;
+    slides: {
+      title: string;
+      subtitle?: string;
+      description?: string;
+      caption?: string;
+      badge?: string;
+      image?: ImageRef;
+      button?: LinkRef;
+      secondaryButton?: LinkRef;
+    }[];
+    autoPlay?: boolean;
+    interval?: number;
+    showArrows?: boolean;
+    showDots?: boolean;
+    showThumbnails?: boolean;
+    imageAspect?: "16:9" | "4:3" | "1:1" | "21:9" | "3:4";
+    columns?: 1 | 2 | 3 | 4 | 5 | 6;
+    pauseOnHover?: boolean;
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    align?: "left" | "center";
+  };
+  marquee: {
+    variant?: "ticker-text" | "cards-stream" | "pill-badges" | "dual-directional";
+    eyebrow?: string;
+    heading?: string;
+    intro?: string;
+    items: {
+      text: string;
+      badge?: string;
+      icon?: IconName;
+      link?: string;
+      subtext?: string;
+    }[];
+    secondaryItems?: {
+      text: string;
+      badge?: string;
+      icon?: IconName;
+      link?: string;
+      subtext?: string;
+    }[];
+    speed?: "slow" | "normal" | "fast";
+    direction?: "left" | "right";
+    pauseOnHover?: boolean;
+    gradientFades?: boolean;
+    fontSize?: "small" | "medium" | "large" | "huge";
   };
 };
 

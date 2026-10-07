@@ -64,10 +64,11 @@ const menuItem = Joi.object({
 const image = Joi.object({
   url: text(2048)
     .pattern(SAFE_IMAGE_URL)
-    .required()
+    .allow("")
+    .optional()
     .messages({ "string.pattern.base": "Images must use an http(s) URL or a /path" }),
-  alt: text(300).allow("").required(),
-});
+  alt: text(300).allow("").optional().default(""),
+}).allow(null);
 
 const color = Joi.string().pattern(HEX_COLOR).required().messages({ "string.pattern.base": "Use a #rrggbb color" });
 const columns = Joi.number().valid(1, 2, 3, 4);
@@ -107,16 +108,17 @@ export const themeSchema = Joi.object({
 export const headerSchema = Joi.object({
   design: Joi.string()
     .valid(...HEADER_DESIGNS)
-    .required(),
-  siteName: text(120).required(),
+    .default("logo-left")
+    .optional(),
+  siteName: text(120).default("Brand").optional(),
   logo: image.optional(),
-  menu: Joi.array().items(menuItem).max(24).required(),
+  menu: Joi.array().items(menuItem).max(24).default([]).optional(),
   cta: link.optional(),
   secondaryCta: link.optional(),
   announcement: optionalText(200),
   announcementLink: link.optional(),
   position: Joi.string().valid("static", "sticky", "fixed", "floating").optional(),
-  sticky: Joi.boolean().required(),
+  sticky: Joi.boolean().default(false).optional(),
   overlay: Joi.boolean().optional(),
   showSearch: Joi.boolean().optional(),
   showAccount: Joi.boolean().optional(),
@@ -130,7 +132,8 @@ export const headerSchema = Joi.object({
 export const footerSchema = Joi.object({
   design: Joi.string()
     .valid(...FOOTER_DESIGNS)
-    .required(),
+    .default("columns")
+    .optional(),
   siteName: text(120).required(),
   logo: image.optional(),
   tagline: optionalText(200),
@@ -175,7 +178,8 @@ export const footerSchema = Joi.object({
 export const heroSchema = Joi.object({
   variant: Joi.string()
     .valid(...HERO_VARIANTS)
-    .required(),
+    .default("centered")
+    .optional(),
   eyebrow: optionalText(200),
   badgeIcon: optionalText(50),
   heading: optionalText(200),
@@ -197,7 +201,7 @@ export const heroSchema = Joi.object({
   bgImagePosition: Joi.string().valid("bottom", "center", "top", "cover").optional(),
   bgOverlayType: Joi.string().valid("dark", "light", "gradient", "none").optional(),
   backgroundVideoUrl: optionalText(500),
-  imagePosition: Joi.string().valid("right", "left", "bottom", "background", "card").optional(),
+  imagePosition: Joi.string().valid("right", "left", "bottom", "background", "card", "center", "top", "none").optional(),
   imageStyle: Joi.string().valid("mockup", "rounded", "glow", "shadow", "plain").optional(),
   overlayOpacity: Joi.number().min(0).max(100).optional(),
   overlayBlur: Joi.boolean().optional(),
@@ -271,16 +275,58 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
   }),
   services: Joi.object({
     heading: text(200).required(),
+    eyebrow: optionalText(100),
     intro: optionalText(500),
-    columns: columns.required(),
-    mobileColumns: columns.required(),
+    variant: Joi.string()
+      .valid(
+        "cards-grid",
+        "bento-grid",
+        "split-showcase",
+        "interactive-list",
+        "horizontal-cards",
+        "minimal-numbered",
+      )
+      .optional(),
+    cardStyle: Joi.string()
+      .valid("surface", "bordered", "flat", "glass", "glow", "elevated", "gradient")
+      .optional(),
+    iconStyle: Joi.string()
+      .valid("pastel-circle", "square-badge", "minimal-accent", "colored-circle", "glow-icon", "none")
+      .optional(),
+    imageAspect: Joi.string().valid("16:9", "4:3", "1:1", "21:9", "auto").optional(),
+    align: Joi.string().valid("left", "center").optional(),
+    columns: columns.optional().default(3),
+    mobileColumns: columns.optional().default(1),
+    splitPosition: Joi.string().valid("left", "right").optional(),
+    splitImage: image.optional(),
+    splitTagline: optionalText(200),
+    splitCta: link.optional(),
+    secondaryCta: link.optional(),
+    bottomCta: link.optional(),
+    bottomSecondaryCta: link.optional(),
+    showBadges: Joi.boolean().optional(),
+    showIcons: Joi.boolean().optional(),
+    showImages: Joi.boolean().optional(),
+    showPrices: Joi.boolean().optional(),
+    showBullets: Joi.boolean().optional(),
+    showNumbers: Joi.boolean().optional(),
     items: Joi.array()
       .items(
         Joi.object({
           title: text(120).required(),
-          description: text(600).allow("").required(),
+          description: text(1000).allow("").required(),
+          badge: optionalText(60),
+          badgeColor: Joi.string().max(30).optional(),
+          icon: Joi.string().max(50).optional(),
+          iconColor: Joi.string().max(30).optional(),
           image: image.optional(),
+          price: optionalText(60),
+          duration: optionalText(60),
+          features: Joi.array().items(text(200)).max(12).optional(),
           link: link.optional(),
+          secondaryLink: link.optional(),
+          backgroundColor: Joi.string().max(100).allow("").optional(),
+          featured: Joi.boolean().optional(),
         }),
       )
       .max(24)
@@ -294,26 +340,85 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   faq: Joi.object({
+    variant: Joi.string()
+      .valid("accordion-classic", "two-column-grid", "split-sidebar", "minimal-numbered", "categorized-cards")
+      .optional(),
+    eyebrow: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
+    supportCta: Joi.object({
+      title: optionalText(100),
+      description: optionalText(300),
+      link: link.optional(),
+    }).optional(),
     items: Joi.array()
-      .items(Joi.object({ question: text(300).required(), answer: text(2000).required() }))
+      .items(
+        Joi.object({
+          question: text(300).required(),
+          answer: text(2000).required(),
+          category: optionalText(50),
+          badge: optionalText(40),
+          isOpenDefault: Joi.boolean().optional(),
+        }),
+      )
       .max(40)
       .required(),
   }),
   cta: Joi.object({
+    variant: Joi.string()
+      .valid("centered-card", "split-visual", "floating-card", "minimal-editorial")
+      .optional(),
+    eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
     button: link.required(),
+    secondaryButton: link.optional(),
+    trustBadges: Joi.array().items(text(80)).max(6).optional(),
+    highlightMetric: Joi.object({
+      value: text(30).required(),
+      label: text(80).required(),
+      subtext: optionalText(120),
+    }).optional(),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
   }),
   contact: Joi.object({
+    variant: Joi.string()
+      .valid("split-form", "cards-hub", "minimal-editorial", "floating-glass")
+      .optional(),
+    eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
     email: optionalText(255),
     phone: optionalText(32),
     address: optionalText(500),
+    officeHours: optionalText(100),
+    responseTime: optionalText(100),
     showForm: Joi.boolean().required(),
     submitLabel: text(40).required(),
+    formHeading: optionalText(120),
+    serviceOptions: Joi.array().items(text(60)).max(8).optional(),
+    channels: Joi.array()
+      .items(
+        Joi.object({
+          label: text(80).required(),
+          value: text(120).required(),
+          description: optionalText(200),
+          icon: Joi.string().valid("mail", "phone", "chat", "user").optional(),
+        }),
+      )
+      .max(6)
+      .optional(),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
   }),
   text: Joi.object({
     heading: optionalText(200),
@@ -348,21 +453,38 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   pricing: Joi.object({
+    variant: Joi.string()
+      .valid("cards-grid", "minimal-monochrome", "spotlight-tier", "horizontal-rows")
+      .optional(),
+    eyebrow: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
+    billingCycleLabel: optionalText(80),
+    discountBadge: optionalText(60),
+    footerNote: optionalText(300),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    columns: Joi.number().integer().min(1).max(4).optional(),
+    mobileColumns: Joi.number().integer().min(1).max(2).optional(),
+    align: Joi.string().valid("left", "center").optional(),
     plans: Joi.array()
       .items(
         Joi.object({
           name: text(60).required(),
-          price: text(20).required(),
-          period: optionalText(20),
+          price: text(30).required(),
+          period: optionalText(30),
+          originalPrice: optionalText(30),
+          badge: optionalText(50),
           description: optionalText(300),
-          features: Joi.array().items(text(160)).max(12).required(),
+          features: Joi.array().items(text(160)).max(15).required(),
+          excludedFeatures: Joi.array().items(text(160)).max(15).optional(),
           cta: link.optional(),
           featured: Joi.boolean().required(),
+          highlightNote: optionalText(120),
         }),
       )
-      .max(4)
+      .max(6)
       .required(),
   }),
   media: Joi.object({
@@ -379,8 +501,17 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     width: Joi.string().valid("contained", "wide").required(),
   }),
   team: Joi.object({
+    variant: Joi.string()
+      .valid("grid-cards", "spotlight-featured", "minimal-editorial", "glass-overlay")
+      .optional(),
+    eyebrow: optionalText(80),
+    badge: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
     columns: columns.required(),
     mobileColumns: columns.required(),
     members: Joi.array()
@@ -388,13 +519,113 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
         Joi.object({
           name: text(120).required(),
           role: optionalText(120),
+          department: optionalText(80),
           bio: optionalText(600),
+          location: optionalText(100),
           photo: image.optional(),
+          tags: Joi.array().items(text(50)).max(6).optional(),
           link: link.optional(),
+          socialLinks: Joi.array()
+            .items(
+              Joi.object({
+                platform: Joi.string()
+                  .valid("linkedin", "twitter", "github", "email", "link")
+                  .required(),
+                url: Joi.string()
+                  .uri({ scheme: ["http", "https", "mailto"] })
+                  .max(255)
+                  .required(),
+              }),
+            )
+            .max(5)
+            .optional(),
         }),
       )
       .max(24)
       .required(),
+  }),
+  carousel: Joi.object({
+    variant: Joi.string()
+      .valid(
+        "cards",
+        "hero-slider",
+        "showcase",
+        "minimal-editorial",
+        "image-gallery",
+        "image-strip",
+        "image-coverflow",
+      )
+      .optional(),
+    eyebrow: optionalText(80),
+    heading: optionalText(200),
+    intro: optionalText(500),
+    badge: optionalText(80),
+    slides: Joi.array()
+      .items(
+        Joi.object({
+          title: text(120).required(),
+          subtitle: optionalText(120),
+          description: optionalText(600),
+          caption: optionalText(300),
+          badge: optionalText(60),
+          image: image.optional(),
+          button: link.optional(),
+          secondaryButton: link.optional(),
+        }),
+      )
+      .min(1)
+      .max(12)
+      .required(),
+    autoPlay: Joi.boolean().optional(),
+    interval: Joi.number().min(2).max(30).optional(),
+    showArrows: Joi.boolean().optional(),
+    showDots: Joi.boolean().optional(),
+    showThumbnails: Joi.boolean().optional(),
+    imageAspect: Joi.string().valid("16:9", "4:3", "1:1", "21:9", "3:4").optional(),
+    columns: columns.optional(),
+    pauseOnHover: Joi.boolean().optional(),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
+  }),
+  marquee: Joi.object({
+    variant: Joi.string()
+      .valid("ticker-text", "cards-stream", "pill-badges", "dual-directional")
+      .optional(),
+    eyebrow: optionalText(80),
+    heading: optionalText(200),
+    intro: optionalText(500),
+    items: Joi.array()
+      .items(
+        Joi.object({
+          text: text(120).required(),
+          badge: optionalText(60),
+          icon: Joi.string().valid(...ICON_NAMES).optional(),
+          link: Joi.string().max(255).optional(),
+          subtext: optionalText(120),
+        }),
+      )
+      .min(1)
+      .max(24)
+      .required(),
+    secondaryItems: Joi.array()
+      .items(
+        Joi.object({
+          text: text(120).required(),
+          badge: optionalText(60),
+          icon: Joi.string().valid(...ICON_NAMES).optional(),
+          link: Joi.string().max(255).optional(),
+          subtext: optionalText(120),
+        }),
+      )
+      .max(24)
+      .optional(),
+    speed: Joi.string().valid("slow", "normal", "fast").optional(),
+    direction: Joi.string().valid("left", "right").optional(),
+    pauseOnHover: Joi.boolean().optional(),
+    gradientFades: Joi.boolean().optional(),
+    fontSize: Joi.string().valid("small", "medium", "large", "huge").optional(),
   }),
 };
 

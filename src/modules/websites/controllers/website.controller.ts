@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { aiGeneratorService } from "../services/ai-generator.service.js";
 import { websiteService } from "../services/website.service.js";
 import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types.js";
 
@@ -142,6 +143,17 @@ export class WebsiteController {
   listVersions = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
     try {
       res.json({ versions: await websiteService.listVersions(req.params.id, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  generateAiSuggestion = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      // Ensure user has access to this website
+      await websiteService.get(req.params.id, req.user!);
+      const suggestion = await aiGeneratorService.generate(req.body);
+      res.json({ suggestion });
     } catch (error) {
       next(error);
     }

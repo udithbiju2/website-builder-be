@@ -71,6 +71,9 @@ export const env = {
   SEED_SUPER_ADMIN_EMAIL: required("SEED_SUPER_ADMIN_EMAIL").toLowerCase(),
   SEED_SUPER_ADMIN_PASSWORD: required("SEED_SUPER_ADMIN_PASSWORD"),
   SEED_SUPER_ADMIN_NAME: process.env.SEED_SUPER_ADMIN_NAME?.trim() || "Super Admin",
+
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY?.trim() || "",
+  OPENAI_MODEL: process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini",
 };
 
 export const isProduction = isProd;
