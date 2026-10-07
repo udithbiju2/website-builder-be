@@ -6,6 +6,7 @@ import { validate } from "../../common/middleware/validate.js";
 import { websiteController } from "./controllers/website.controller.js";
 import {
   createWebsiteSchema,
+  generateAiSuggestionSchema,
   listTemplatesQuerySchema,
   listWebsitesQuerySchema,
   pageContentParamsSchema,
@@ -66,11 +67,23 @@ websitesRouter.post(
   websiteController.saveAsTemplate,
 );
 websitesRouter.get("/:id/saved-sections", byId, websiteController.listSavedSections);
-websitesRouter.post("/:id/saved-sections", byId, validate(saveSectionSchema), websiteController.saveSection);
+websitesRouter.post(
+  "/:id/saved-sections",
+  byId,
+  validate(saveSectionSchema),
+  websiteController.saveSection,
+);
 websitesRouter.delete(
   "/:id/saved-sections/:savedSectionId",
   validate(savedSectionParamsSchema, "params"),
   websiteController.deleteSavedSection,
+);
+websitesRouter.post(
+  "/:id/ai/generate",
+  byId,
+  rateLimit({ name: "website-ai-generate", max: 60, windowSeconds: 60 }),
+  validate(generateAiSuggestionSchema),
+  websiteController.generateAiSuggestion,
 );
 
 export default websitesRouter;
