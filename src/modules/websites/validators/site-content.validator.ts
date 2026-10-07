@@ -385,13 +385,36 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     align: Joi.string().valid("left", "center").optional(),
   }),
   contact: Joi.object({
+    variant: Joi.string()
+      .valid("split-form", "cards-hub", "minimal-editorial", "floating-glass")
+      .optional(),
+    eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
     email: optionalText(255),
     phone: optionalText(32),
     address: optionalText(500),
+    officeHours: optionalText(100),
+    responseTime: optionalText(100),
     showForm: Joi.boolean().required(),
     submitLabel: text(40).required(),
+    formHeading: optionalText(120),
+    serviceOptions: Joi.array().items(text(60)).max(8).optional(),
+    channels: Joi.array()
+      .items(
+        Joi.object({
+          label: text(80).required(),
+          value: text(120).required(),
+          description: optionalText(200),
+          icon: Joi.string().valid("mail", "phone", "chat", "user").optional(),
+        }),
+      )
+      .max(6)
+      .optional(),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
   }),
   text: Joi.object({
     heading: optionalText(200),
@@ -474,8 +497,17 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     width: Joi.string().valid("contained", "wide").required(),
   }),
   team: Joi.object({
+    variant: Joi.string()
+      .valid("grid-cards", "spotlight-featured", "minimal-editorial", "glass-overlay")
+      .optional(),
+    eyebrow: optionalText(80),
+    badge: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
     columns: columns.required(),
     mobileColumns: columns.required(),
     members: Joi.array()
@@ -483,9 +515,26 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
         Joi.object({
           name: text(120).required(),
           role: optionalText(120),
+          department: optionalText(80),
           bio: optionalText(600),
+          location: optionalText(100),
           photo: image.optional(),
+          tags: Joi.array().items(text(50)).max(6).optional(),
           link: link.optional(),
+          socialLinks: Joi.array()
+            .items(
+              Joi.object({
+                platform: Joi.string()
+                  .valid("linkedin", "twitter", "github", "email", "link")
+                  .required(),
+                url: Joi.string()
+                  .uri({ scheme: ["http", "https", "mailto"] })
+                  .max(255)
+                  .required(),
+              }),
+            )
+            .max(5)
+            .optional(),
         }),
       )
       .max(24)

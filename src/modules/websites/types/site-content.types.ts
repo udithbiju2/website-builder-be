@@ -428,13 +428,27 @@ export type SectionDataMap = {
     align?: "left" | "center";
   };
   contact: {
+    variant?: "split-form" | "cards-hub" | "minimal-editorial" | "floating-glass";
+    eyebrow?: string;
     heading: string;
     text?: string;
     email?: string;
     phone?: string;
     address?: string;
+    officeHours?: string;
+    responseTime?: string;
     showForm: boolean;
     submitLabel: string;
+    formHeading?: string;
+    serviceOptions?: string[];
+    channels?: {
+      label: string;
+      value: string;
+      description?: string;
+      icon?: "mail" | "phone" | "chat" | "user";
+    }[];
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    align?: "left" | "center";
   };
   text: { heading?: string; body: string };
   gallery: {
@@ -491,11 +505,29 @@ export type SectionDataMap = {
     width: "contained" | "wide";
   };
   team: {
+    variant?: "grid-cards" | "spotlight-featured" | "minimal-editorial" | "glass-overlay";
+    eyebrow?: string;
+    badge?: string;
     heading: string;
     intro?: string;
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    align?: "left" | "center";
     columns: GridColumns;
     mobileColumns: GridColumns;
-    members: { name: string; role?: string; bio?: string; photo?: ImageRef; link?: LinkRef }[];
+    members: {
+      name: string;
+      role?: string;
+      department?: string;
+      bio?: string;
+      location?: string;
+      photo?: ImageRef;
+      tags?: string[];
+      link?: LinkRef;
+      socialLinks?: {
+        platform: "linkedin" | "twitter" | "github" | "email" | "link";
+        url: string;
+      }[];
+    }[];
   };
 };
 
