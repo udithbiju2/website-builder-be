@@ -392,11 +392,41 @@ export type SectionDataMap = {
     items: { quote: string; name: string; role?: string }[];
   };
   faq: {
+    variant?: "accordion-classic" | "two-column-grid" | "split-sidebar" | "minimal-numbered" | "categorized-cards";
+    eyebrow?: string;
     heading: string;
     intro?: string;
-    items: { question: string; answer: string }[];
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated";
+    align?: "left" | "center";
+    supportCta?: {
+      title?: string;
+      description?: string;
+      link?: LinkRef;
+    };
+    items: {
+      question: string;
+      answer: string;
+      category?: string;
+      badge?: string;
+      isOpenDefault?: boolean;
+    }[];
   };
-  cta: { heading: string; text?: string; button: LinkRef };
+  cta: {
+    variant?: "centered-card" | "split-visual" | "floating-card" | "minimal-editorial";
+    eyebrow?: string;
+    heading: string;
+    text?: string;
+    button: LinkRef;
+    secondaryButton?: LinkRef;
+    trustBadges?: string[];
+    highlightMetric?: {
+      value: string;
+      label: string;
+      subtext?: string;
+    };
+    cardStyle?: "default" | "bordered" | "flat" | "glass" | "elevated" | "contrast";
+    align?: "left" | "center";
+  };
   contact: {
     heading: string;
     text?: string;

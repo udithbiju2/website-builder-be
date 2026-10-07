@@ -336,17 +336,53 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   faq: Joi.object({
+    variant: Joi.string()
+      .valid("accordion-classic", "two-column-grid", "split-sidebar", "minimal-numbered", "categorized-cards")
+      .optional(),
+    eyebrow: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
+    supportCta: Joi.object({
+      title: optionalText(100),
+      description: optionalText(300),
+      link: link.optional(),
+    }).optional(),
     items: Joi.array()
-      .items(Joi.object({ question: text(300).required(), answer: text(2000).required() }))
+      .items(
+        Joi.object({
+          question: text(300).required(),
+          answer: text(2000).required(),
+          category: optionalText(50),
+          badge: optionalText(40),
+          isOpenDefault: Joi.boolean().optional(),
+        }),
+      )
       .max(40)
       .required(),
   }),
   cta: Joi.object({
+    variant: Joi.string()
+      .valid("centered-card", "split-visual", "floating-card", "minimal-editorial")
+      .optional(),
+    eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
     button: link.required(),
+    secondaryButton: link.optional(),
+    trustBadges: Joi.array().items(text(80)).max(6).optional(),
+    highlightMetric: Joi.object({
+      value: text(30).required(),
+      label: text(80).required(),
+      subtext: optionalText(120),
+    }).optional(),
+    cardStyle: Joi.string()
+      .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
+      .optional(),
+    align: Joi.string().valid("left", "center").optional(),
   }),
   contact: Joi.object({
     heading: text(200).required(),
