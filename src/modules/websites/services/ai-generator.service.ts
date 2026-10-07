@@ -658,26 +658,21 @@ const SECTION_KEYWORDS: Record<string, string> = {
   numbers: "stats",
 };
 
+import { aiSettingsService } from "../../admin-settings/services/ai-settings.service.js";
+
 export class AiGeneratorService {
-  private get apiKey(): string {
-    const key = env.OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    if (!key) {
-      throw new AppError(
-        400,
-        "OpenAI API key is not configured. Please add OPENAI_API_KEY in backend .env.",
-      );
-    }
-    return key;
-  }
-
-  private get model(): string {
-    return env.OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
-  }
-
   /**
    * Calls OpenAI Chat Completions API using native fetch.
    */
   private async callOpenAi(messages: { role: "system" | "user" | "assistant"; content: string }[], temperature = 0.7): Promise<string> {
+    const { apiKey, model } = await aiSettingsService.getCredentials();
+    if (!apiKey) {
+      throw new AppError(
+        400,
+        "OpenAI API key is not configured. Please add your OpenAI API key in Super Admin Settings > AI Settings.",
+      );
+    }
+
     // OpenAI response_format json_object requires the string 'json' somewhere in the prompt/messages
     const hasJsonWord = messages.some((m) => m.content.toLowerCase().includes("json"));
     const safeMessages = hasJsonWord
@@ -692,10 +687,10 @@ export class AiGeneratorService {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: this.model,
+        model: model || "gpt-4o-mini",
         messages: safeMessages,
         temperature,
         response_format: { type: "json_object" },
@@ -714,6 +709,20 @@ export class AiGeneratorService {
       } catch {
         // use default errorMsg
       }
+
+      if (response.status === 401) {
+        throw new AppError(
+          401,
+          `Invalid OpenAI API Key (${errorMsg}). Please paste your valid OpenAI API key in Super Admin > Settings > AI Settings.`
+        );
+      }
+      if (response.status === 429) {
+        throw new AppError(
+          429,
+          `OpenAI Rate Limit or Quota Exceeded (${errorMsg}). Please check your OpenAI account credits or update your key in Super Admin > Settings > AI Settings.`
+        );
+      }
+
       throw new AppError(502, `AI Generation Failed: ${errorMsg}`);
     }
 

@@ -8,6 +8,7 @@ import { logger } from "./config/logger.js";
 import authRouter from "./modules/auth/auth.routes.js";
 import clientsRouter from "./modules/clients/client.routes.js";
 import emailSettingsRouter from "./modules/email/email.routes.js";
+import aiSettingsRouter from "./modules/admin-settings/ai-settings.routes.js";
 import healthRouter from "./modules/health/health.routes.js";
 import mediaRouter from "./modules/media/media.routes.js";
 import websitesRouter from "./modules/websites/website.routes.js";
@@ -45,6 +46,7 @@ app.use((req, res, next) => {
 app.use("/api/health", healthRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/admin/settings/email", emailSettingsRouter);
+app.use("/api/admin/settings/ai", aiSettingsRouter);
 app.use("/api/admin/clients", clientsRouter);
 app.use("/api/websites", websitesRouter);
 app.use("/api/media", mediaRouter);
