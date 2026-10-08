@@ -1,3 +1,4 @@
+import { isReasoningModel } from "../../../common/constants/ai-models.js";
 import { AppError } from "../../../common/errors/AppError.js";
 import { logger } from "../../../config/logger.js";
 import { prisma } from "../../../config/prisma.js";
@@ -27,11 +28,6 @@ export type OpenAiContext = {
 
 const ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const REQUEST_TIMEOUT_MS = 150_000;
-
-/** o-series and gpt-5 models reject a custom temperature and spend completion tokens on reasoning. */
-function isReasoningModel(model: string): boolean {
-  return /^(o\d|gpt-5)/i.test(model);
-}
 
 type ChatCompletionResponse = {
   model?: string;

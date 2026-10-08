@@ -16,6 +16,7 @@ import { PLANNER_SYSTEM_PROMPT, buildPlannerInput } from "../ai/ai-planner.js";
 import { sanitizeCustomData } from "../ai/custom-section.js";
 import { CUSTOM_LIMITS, ICON_NAMES } from "../types/site-content.types.js";
 import { aiSettingsService } from "../../admin-settings/services/ai-settings.service.js";
+import { isReasoningModel } from "../../../common/constants/ai-models.js";
 
 export type { SectionEnvelope };
 
@@ -1009,7 +1010,7 @@ export class AiGeneratorService {
       responseFormat = { type: "json_object" },
       signal,
     } = options;
-    const { apiKey, model } = await aiSettingsService.getCredentials();
+    const { apiKey, model } = await aiSettingsService.getCredentials(logging.clientId);
     if (!apiKey) {
       throw new AppError(
         400,
@@ -1060,6 +1061,8 @@ export class AiGeneratorService {
           ? AbortSignal.any([signal, timeoutSignal])
           : timeoutSignal;
 
+        const reasoning = isReasoningModel(targetModel);
+
         try {
           const response = await fetch(
             "https://api.openai.com/v1/chat/completions",
@@ -1072,9 +1075,11 @@ export class AiGeneratorService {
               body: JSON.stringify({
                 model: targetModel,
                 messages: safeMessages,
-                temperature,
                 response_format: responseFormat,
-                max_tokens: maxTokens,
+                // Reasoning models reject temperature, and their hidden reasoning tokens count against the completion budget.
+                ...(reasoning
+                  ? { max_completion_tokens: maxTokens * 4 }
+                  : { temperature, max_tokens: maxTokens }),
               }),
               signal: combinedSignal,
             },
@@ -1248,7 +1253,7 @@ export class AiGeneratorService {
     } = options;
     const logging: LoggingContext = { clientId, websiteId, userId };
 
-    const { apiKey } = await aiSettingsService.getCredentials();
+    const { apiKey } = await aiSettingsService.getCredentials(clientId);
     if (apiKey) {
       await this.checkModeration(prompt, apiKey, signal);
     }

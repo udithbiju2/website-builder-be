@@ -1,3 +1,5 @@
+import { AppError } from "../../../common/errors/AppError.js";
+import { aiModelOptions, DEFAULT_AI_MODEL, findAiModel, type AiModelOption } from "../../../common/constants/ai-models.js";
 import { decryptSecret, encryptSecret } from "../../../common/utils/secret-box.js";
 import { env } from "../../../config/env.js";
 import { prisma } from "../../../config/prisma.js";
@@ -11,6 +13,17 @@ export type AiConfigView = {
   openaiApiKeyMasked: string | null;
   model: string;
   updatedAt: string | null;
+  models: AiModelOption[];
+};
+
+export type ClientAiSettingsView = {
+  /** The client's own choice; null = platform default. */
+  model: string | null;
+  defaultModel: string;
+  /** The model AI requests for this client actually use. */
+  effectiveModel: string;
+  configured: boolean;
+  models: AiModelOption[];
 };
 
 export type UpdateAiConfigInput = {
@@ -33,6 +46,7 @@ function toView(config: AiConfig | null): AiConfigView {
       openaiApiKeyMasked: envKey ? maskApiKey(envKey) : null,
       model: envModel,
       updatedAt: null,
+      models: aiModelOptions(),
     };
   }
 
@@ -44,6 +58,7 @@ function toView(config: AiConfig | null): AiConfigView {
     openaiApiKeyMasked: activeKey ? maskApiKey(activeKey) : null,
     model: config.model || env.OPENAI_MODEL || "gpt-4o-mini",
     updatedAt: config.updatedAt ? config.updatedAt.toISOString() : null,
+    models: aiModelOptions(),
   };
 }
 
@@ -94,14 +109,46 @@ export class AiSettingsService {
     return toView(config);
   }
 
-  async getCredentials(): Promise<{ apiKey: string; model: string }> {
+  /** Pass the client id to apply that client's own model choice. */
+  async getCredentials(clientId?: string | null): Promise<{ apiKey: string; model: string }> {
     await this.ensureTable();
-    const config = await prisma.aiConfig.findUnique({ where: { id: CONFIG_ID } }).catch(() => null);
+    const [config, client] = await Promise.all([
+      prisma.aiConfig.findUnique({ where: { id: CONFIG_ID } }).catch(() => null),
+      clientId ? prisma.client.findUnique({ where: { id: clientId }, select: { aiModel: true } }) : null,
+    ]);
     const storedKey = config?.openaiApiKeyCipher ? decryptSecret(config.openaiApiKeyCipher) : null;
     const apiKey = storedKey || env.OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
-    const model = config?.model || env.OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
+    const platformModel = config?.model || env.OPENAI_MODEL || process.env.OPENAI_MODEL || DEFAULT_AI_MODEL;
+    // Ignore a stored choice that has since been removed from the catalog.
+    const model = findAiModel(client?.aiModel)?.id ?? platformModel;
 
     return { apiKey, model };
+  }
+
+  async getClientSettings(clientId: string): Promise<ClientAiSettingsView> {
+    const [platform, client] = await Promise.all([
+      this.getConfigView(),
+      prisma.client.findUnique({ where: { id: clientId }, select: { aiModel: true } }),
+    ]);
+    if (!client) throw new AppError(404, "Client not found");
+    const model = findAiModel(client.aiModel)?.id ?? null;
+    return {
+      model,
+      defaultModel: platform.model,
+      effectiveModel: model ?? platform.model,
+      configured: platform.configured,
+      models: platform.models,
+    };
+  }
+
+  async updateClientSettings(clientId: string, model: string | null): Promise<ClientAiSettingsView> {
+    if (model !== null && !findAiModel(model)) {
+      throw new AppError(400, "Choose one of the available AI models.", "VALIDATION_ERROR", [
+        { message: "Unknown model", path: ["model"] },
+      ]);
+    }
+    await prisma.client.update({ where: { id: clientId }, data: { aiModel: model } });
+    return this.getClientSettings(clientId);
   }
 }
 

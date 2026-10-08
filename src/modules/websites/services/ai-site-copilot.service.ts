@@ -242,7 +242,7 @@ export class AiSiteCopilotService {
 
     const [generation, { apiKey, model }] = await Promise.all([
       prisma.websiteGeneration.findUnique({ where: { websiteId: website.id }, select: { input: true } }),
-      aiSettingsService.getCredentials(),
+      aiSettingsService.getCredentials(website.clientId),
     ]);
     if (!apiKey) {
       throw new AppError(503, "The AI assistant isn't available yet. Ask the administrator to set it up.", "AI_NOT_CONFIGURED");
