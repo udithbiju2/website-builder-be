@@ -151,8 +151,13 @@ export class WebsiteController {
   generateAiSuggestion = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
     try {
       // Ensure user has access to this website
-      await websiteService.get(req.params.id, req.user!);
-      const suggestion = await aiGeneratorService.generate(req.body);
+      const website = await websiteService.get(req.params.id, req.user!);
+      const suggestion = await aiGeneratorService.generate({
+        ...req.body,
+        clientId: website.clientId,
+        websiteId: website.id,
+        userId: req.user?.id,
+      });
       res.json({ suggestion });
     } catch (error) {
       next(error);

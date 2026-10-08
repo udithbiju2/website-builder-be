@@ -1,0 +1,21 @@
+model AiUsageLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  clientId         String   @db.Uuid
+  websiteId        String?  @db.Uuid
+  userId           String?  @db.Uuid
+  model            String   @db.VarChar(100)
+  scope            String   @db.VarChar(50)
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  durationMs       Int?     @default(0)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+
+  client  Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  website Website? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([clientId, createdAt])
+  @@index([createdAt])
+  @@map("ai_usage_logs")
+}

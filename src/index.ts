@@ -6,10 +6,12 @@ import { prisma } from "./config/prisma.js";
 import { connectRedis, redis } from "./config/redis.js";
 import { seedDesignLibrary } from "./seeder/seed-design-library.js";
 import { seedSuperAdmin } from "./seeder/seed-super-admin.js";
+import { ensureAiUsageTable } from "./modules/admin-ai-usage/services/ai-usage.service.js";
 
 async function bootstrap() {
   await prisma.$connect();
   logger.info("Database connected");
+  await ensureAiUsageTable();
   await connectRedis();
   await seedSuperAdmin();
   await seedDesignLibrary();

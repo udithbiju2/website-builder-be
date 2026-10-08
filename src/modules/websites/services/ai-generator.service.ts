@@ -1,4 +1,6 @@
 import { env } from "../../../config/env.js";
+import { prisma } from "../../../config/prisma.js";
+import { logger } from "../../../config/logger.js";
 import { AppError } from "../../../common/errors/AppError.js";
 import crypto from "crypto";
 
@@ -38,6 +40,9 @@ export type GenerateAiOptions = {
   currentSection?: SectionEnvelope;
   currentSections?: SectionEnvelope[];
   history?: ChatHistoryMessage[];
+  clientId?: string;
+  websiteId?: string;
+  userId?: string;
 };
 
 const COLOR_MAP: Record<string, string> = {
@@ -664,7 +669,11 @@ export class AiGeneratorService {
   /**
    * Calls OpenAI Chat Completions API using native fetch.
    */
-  private async callOpenAi(messages: { role: "system" | "user" | "assistant"; content: string }[], temperature = 0.7): Promise<string> {
+  private async callOpenAi(
+    messages: { role: "system" | "user" | "assistant"; content: string }[],
+    temperature = 0.7,
+    loggingContext?: { clientId?: string; websiteId?: string; userId?: string; scope?: string },
+  ): Promise<string> {
     const { apiKey, model } = await aiSettingsService.getCredentials();
     if (!apiKey) {
       throw new AppError(
@@ -683,6 +692,9 @@ export class AiGeneratorService {
             : m,
         );
 
+    const startMs = Date.now();
+    const effectiveModel = model || "gpt-4o-mini";
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -690,7 +702,7 @@ export class AiGeneratorService {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: model || "gpt-4o-mini",
+        model: effectiveModel,
         messages: safeMessages,
         temperature,
         response_format: { type: "json_object" },
@@ -727,12 +739,39 @@ export class AiGeneratorService {
     }
 
     const json = (await response.json()) as {
+      model?: string;
       choices?: Array<{ message?: { content?: string } }>;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
     };
 
     const content = json.choices?.[0]?.message?.content;
     if (!content) {
       throw new AppError(502, "OpenAI returned an empty response");
+    }
+
+    if (loggingContext?.clientId) {
+      const durationMs = Date.now() - startMs;
+      prisma.aiUsageLog
+        .create({
+          data: {
+            clientId: loggingContext.clientId,
+            websiteId: loggingContext.websiteId || null,
+            userId: loggingContext.userId || null,
+            model: json.model || effectiveModel,
+            scope: loggingContext.scope || "section",
+            promptTokens: json.usage?.prompt_tokens ?? 0,
+            completionTokens: json.usage?.completion_tokens ?? 0,
+            totalTokens: json.usage?.total_tokens ?? 0,
+            durationMs,
+          },
+        })
+        .catch((err) => {
+          logger.error({ err, clientId: loggingContext.clientId }, "Failed to record AI usage log");
+        });
     }
 
     return content;
@@ -742,7 +781,18 @@ export class AiGeneratorService {
    * Generates AI suggestion for a single section, adding a section, or full page.
    */
   async generate(options: GenerateAiOptions): Promise<AiSuggestionPayload> {
-    const { prompt, scope, sectionId, currentSection, currentSections = [], history = [] } = options;
+    const {
+      prompt,
+      scope,
+      sectionId,
+      currentSection,
+      currentSections = [],
+      history = [],
+      clientId,
+      websiteId,
+      userId,
+    } = options;
+    const loggingContext = { clientId, websiteId, userId, scope };
     const lowerPrompt = prompt.toLowerCase().trim();
 
     // Fast handling for common greetings
@@ -841,7 +891,11 @@ User Prompt: "${prompt}"
 
 Please create a complete, stunning, high-converting "${requestedSectionType}" section JSON for this instruction.`;
 
-      const rawAiResponse = await this.callOpenAi(buildMessages(SYSTEM_PROMPT_ADD_SECTION, userMessage));
+      const rawAiResponse = await this.callOpenAi(
+        buildMessages(SYSTEM_PROMPT_ADD_SECTION, userMessage),
+        0.7,
+        { ...loggingContext, scope: "section_add" },
+      );
 
       let parsed: any;
       try {
@@ -897,7 +951,11 @@ User Instruction: "${prompt}"
 
 Please modify this section data and settings to satisfy the user instruction. If changing color/background, use valid 6-digit hex in settings.customColors.`;
 
-        const rawAiResponse = await this.callOpenAi(buildMessages(SYSTEM_PROMPT_SECTION_EDIT, userMessage));
+        const rawAiResponse = await this.callOpenAi(
+          buildMessages(SYSTEM_PROMPT_SECTION_EDIT, userMessage),
+          0.7,
+          { ...loggingContext, scope: "section" },
+        );
 
         let parsed: { summary?: string; chatReply?: string; intent?: string; data?: Record<string, unknown>; settings?: Record<string, unknown> };
         try {
@@ -955,7 +1013,11 @@ Current Sections on Page: ${currentSections.map((s) => s.type).join(", ") || "No
 
 Please analyze the user's intent. If it's conversational / advice / questions, return "intent": "chat" and "chatReply". If it's page generation, output "intent": "page" and "sections".`;
 
-    const rawAiResponse = await this.callOpenAi(buildMessages(SYSTEM_PROMPT_PAGE, userMessage));
+    const rawAiResponse = await this.callOpenAi(
+      buildMessages(SYSTEM_PROMPT_PAGE, userMessage),
+      0.7,
+      { ...loggingContext, scope: "page" },
+    );
 
     let parsed: {
       intent?: "chat" | "page";
