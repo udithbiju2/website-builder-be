@@ -75,12 +75,12 @@ export async function loadImages(clientId: string, ids: string[]): Promise<Brief
 export class WebsiteGenerationService {
   /** Creates the website (one blank page) plus a PENDING job, and wakes the worker. */
   async createWithAi(input: CreateAiWebsiteInput, actor: AuthUser): Promise<WebsiteDetail> {
-    const { apiKey } = await aiSettingsService.getCredentials();
+    const clientId = resolveClientId(input, actor);
+    const { apiKey } = await aiSettingsService.getCredentials(clientId);
     if (!apiKey) {
       throw new AppError(503, "AI website building isn't available yet. Ask the administrator to set it up.", "AI_NOT_CONFIGURED");
     }
 
-    const clientId = resolveClientId(input, actor);
     const active = await prisma.websiteGeneration.count({
       where: { clientId, status: { in: [GenerationStatus.PENDING, GenerationStatus.RUNNING] } },
     });
@@ -220,7 +220,7 @@ export class WebsiteGenerationService {
     const brief = generation.input as unknown as GenerationBrief;
     const startedFrom = website.draftUpdatedAt;
 
-    const { apiKey, model } = await aiSettingsService.getCredentials();
+    const { apiKey, model } = await aiSettingsService.getCredentials(website.clientId);
     if (!apiKey) throw new AppError(503, "AI website building isn't configured.", "AI_NOT_CONFIGURED");
 
     const [images, logoImages, themeRows] = await Promise.all([

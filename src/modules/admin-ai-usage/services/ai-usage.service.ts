@@ -1,4 +1,5 @@
 import { prisma } from "../../../config/prisma.js";
+import { AI_MODEL_PRICING, DEFAULT_AI_MODEL } from "../../../common/constants/ai-models.js";
 import { Prisma } from "../../../generated/prisma/client.js";
 import type {
   AiUsageListQuery,
@@ -28,6 +29,21 @@ export async function ensureAiUsageTable(): Promise<void> {
     CREATE INDEX IF NOT EXISTS "ai_usage_logs_clientId_createdAt_idx" ON "ai_usage_logs"("clientId", "createdAt");
     CREATE INDEX IF NOT EXISTS "ai_usage_logs_createdAt_idx" ON "ai_usage_logs"("createdAt");
   `);
+}
+
+const PER_TOKEN = 1 / 1_000_000;
+
+function tokenCostSql(price: { inputPerMillion: number; outputPerMillion: number }): Prisma.Sql {
+  return Prisma.sql`(l."promptTokens" * ${price.inputPerMillion * PER_TOKEN}::float8 + l."completionTokens" * ${price.outputPerMillion * PER_TOKEN}::float8)`;
+}
+
+/** Per-row USD cost. Logs store the dated model OpenAI returns, e.g. "gpt-4o-mini-2024-07-18". */
+function usageCostSql(): Prisma.Sql {
+  const fallback = AI_MODEL_PRICING.find((model) => model.id === DEFAULT_AI_MODEL)!;
+  const branches = AI_MODEL_PRICING.map(
+    (model) => Prisma.sql`WHEN l.model = ${model.id} OR l.model LIKE ${`${model.id}-20%`} THEN ${tokenCostSql(model)}`,
+  );
+  return Prisma.sql`CASE ${Prisma.join(branches, " ")} ELSE ${tokenCostSql(fallback)} END`;
 }
 
 export class AiUsageService {
@@ -91,6 +107,7 @@ export class AiUsageService {
         break;
     }
 
+    const costSql = usageCostSql();
     const offset = (query.page - 1) * query.pageSize;
     const limit = query.pageSize;
 
@@ -102,14 +119,7 @@ export class AiUsageService {
           COALESCE(SUM(l."promptTokens"), 0)::int AS "promptTokens",
           COALESCE(SUM(l."completionTokens"), 0)::int AS "completionTokens",
           COALESCE(SUM(l."totalTokens"), 0)::int AS "totalTokens",
-          COALESCE(SUM(
-            CASE 
-              WHEN l.model ILIKE '%gpt-4o-mini%' THEN (l."promptTokens" * 0.00000015 + l."completionTokens" * 0.0000006)
-              WHEN l.model ILIKE '%gpt-4o%' THEN (l."promptTokens" * 0.0000025 + l."completionTokens" * 0.00001)
-              WHEN l.model ILIKE '%gpt-4%' THEN (l."promptTokens" * 0.00001 + l."completionTokens" * 0.00003)
-              ELSE (l."promptTokens" * 0.00000015 + l."completionTokens" * 0.0000006)
-            END
-          ), 0)::float AS "estimatedCost",
+          COALESCE(SUM(${costSql}), 0)::float AS "estimatedCost",
           MAX(l."createdAt") AS "lastUsedAt",
           MODE() WITHIN GROUP (ORDER BY l.model) AS "topModel"
         FROM "ai_usage_logs" l
