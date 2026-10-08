@@ -30,7 +30,6 @@ export type AiSuggestionPayload = {
   target:
     | { scope: "chat" }
     | { scope: "section"; sectionId: string }
-    /** `rebuild` marks a whole-page rewrite; `focusSectionId` is the section to scroll to. */
     | { scope: "page"; rebuild: boolean; focusSectionId?: string };
   before: SectionEnvelope[];
   after: SectionEnvelope[];
@@ -55,6 +54,7 @@ export type GenerateAiOptions = {
   clientId?: string;
   websiteId?: string;
   userId?: string;
+  signal?: AbortSignal;
 };
 
 const COLOR_MAP: Record<string, string> = {
@@ -96,7 +96,9 @@ export function sanitizeHexColor(val: unknown): string | undefined {
   return COLOR_MAP[cleanKey];
 }
 
-export function sanitizeSectionSettings(rawSettings: Record<string, unknown> = {}): Record<string, unknown> {
+export function sanitizeSectionSettings(
+  rawSettings: Record<string, unknown> = {},
+): Record<string, unknown> {
   const result: Record<string, unknown> = {
     background: "default",
     hideOnMobile: false,
@@ -111,7 +113,8 @@ export function sanitizeSectionSettings(rawSettings: Record<string, unknown> = {
       const hex = sanitizeHexColor(result.background);
       if (hex) {
         const existingCustom =
-          typeof result.customColors === "object" && result.customColors !== null
+          typeof result.customColors === "object" &&
+          result.customColors !== null
             ? (result.customColors as Record<string, unknown>)
             : {};
         result.customColors = {
@@ -129,13 +132,20 @@ export function sanitizeSectionSettings(rawSettings: Record<string, unknown> = {
   if (typeof result.customColors === "object" && result.customColors !== null) {
     const rawCustom = result.customColors as Record<string, unknown>;
     const cleanCustom: Record<string, string> = {};
-    for (const key of ["background", "text", "primary", "muted", "border"] as const) {
+    for (const key of [
+      "background",
+      "text",
+      "primary",
+      "muted",
+      "border",
+    ] as const) {
       const hex = sanitizeHexColor(rawCustom[key]);
       if (hex) {
         cleanCustom[key] = hex;
       }
     }
-    result.customColors = Object.keys(cleanCustom).length > 0 ? cleanCustom : undefined;
+    result.customColors =
+      Object.keys(cleanCustom).length > 0 ? cleanCustom : undefined;
   } else {
     delete result.customColors;
   }
@@ -143,7 +153,10 @@ export function sanitizeSectionSettings(rawSettings: Record<string, unknown> = {
   return result;
 }
 
-export function sanitizeSectionData(type: string, rawData: Record<string, unknown> = {}): Record<string, unknown> {
+export function sanitizeSectionData(
+  type: string,
+  rawData: Record<string, unknown> = {},
+): Record<string, unknown> {
   if (type === "custom") return sanitizeCustomData(rawData);
   const data = { ...rawData };
 
@@ -178,7 +191,9 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
   }
 
   if (typeof data.image === "string") {
-    data.image = data.image.trim() ? { url: data.image.trim(), alt: "Image" } : undefined;
+    data.image = data.image.trim()
+      ? { url: data.image.trim(), alt: "Image" }
+      : undefined;
   }
   if (data.image && typeof data.image === "object") {
     const img = data.image as Record<string, unknown>;
@@ -209,34 +224,69 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
   }
   if (data.secondaryCta && typeof data.secondaryCta === "object") {
     const cta = data.secondaryCta as Record<string, unknown>;
-    if (!cta.href || typeof cta.href !== "string" || !cta.href.trim() || !cta.label || typeof cta.label !== "string" || !cta.label.trim()) {
+    if (
+      !cta.href ||
+      typeof cta.href !== "string" ||
+      !cta.href.trim() ||
+      !cta.label ||
+      typeof cta.label !== "string" ||
+      !cta.label.trim()
+    ) {
       delete data.secondaryCta;
     }
   }
 
   switch (type) {
     case "pricing": {
-      const validPricingVariants = ["cards-grid", "minimal-monochrome", "spotlight-tier", "horizontal-rows"];
-      if (typeof data.variant !== "string" || !validPricingVariants.includes(data.variant)) {
+      const validPricingVariants = [
+        "cards-grid",
+        "minimal-monochrome",
+        "spotlight-tier",
+        "horizontal-rows",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validPricingVariants.includes(data.variant)
+      ) {
         data.variant = "cards-grid";
       }
       if (!data.heading) data.heading = "Transparent, flexible pricing";
 
       // AI might return tiers instead of plans
-      const rawPlans = Array.isArray(data.plans) ? data.plans : Array.isArray(data.tiers) ? data.tiers : [];
+      const rawPlans = Array.isArray(data.plans)
+        ? data.plans
+        : Array.isArray(data.tiers)
+          ? data.tiers
+          : [];
       if (rawPlans.length > 0) {
         data.plans = rawPlans.map((p: any, idx: number) => ({
           name: typeof p?.name === "string" ? p.name : `Plan ${idx + 1}`,
           price: typeof p?.price === "string" ? p.price : "$29",
-          period: typeof p?.period === "string" ? p.period : typeof p?.interval === "string" ? p.interval : "/mo",
-          originalPrice: typeof p?.originalPrice === "string" ? p.originalPrice : undefined,
+          period:
+            typeof p?.period === "string"
+              ? p.period
+              : typeof p?.interval === "string"
+                ? p.interval
+                : "/mo",
+          originalPrice:
+            typeof p?.originalPrice === "string" ? p.originalPrice : undefined,
           badge: typeof p?.badge === "string" ? p.badge : undefined,
           description: typeof p?.description === "string" ? p.description : "",
-          features: Array.isArray(p?.features) ? p.features.map(String) : ["All core features included"],
-          excludedFeatures: Array.isArray(p?.excludedFeatures) ? p.excludedFeatures.map(String) : undefined,
-          cta: p?.cta && typeof p.cta === "object" ? p.cta : p?.button && typeof p.button === "object" ? p.button : { label: "Get started", href: "/contact" },
+          features: Array.isArray(p?.features)
+            ? p.features.map(String)
+            : ["All core features included"],
+          excludedFeatures: Array.isArray(p?.excludedFeatures)
+            ? p.excludedFeatures.map(String)
+            : undefined,
+          cta:
+            p?.cta && typeof p.cta === "object"
+              ? p.cta
+              : p?.button && typeof p.button === "object"
+                ? p.button
+                : { label: "Get started", href: "/contact" },
           featured: Boolean(p?.featured ?? p?.highlighted ?? idx === 1),
-          highlightNote: typeof p?.highlightNote === "string" ? p.highlightNote : undefined,
+          highlightNote:
+            typeof p?.highlightNote === "string" ? p.highlightNote : undefined,
         }));
       } else {
         data.plans = [
@@ -245,7 +295,11 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
             price: "$29",
             period: "/mo",
             description: "For individuals & emerging projects",
-            features: ["Up to 5 team members", "Standard analytics", "Community support"],
+            features: [
+              "Up to 5 team members",
+              "Standard analytics",
+              "Community support",
+            ],
             featured: false,
             cta: { label: "Start Free Trial", href: "/contact" },
           },
@@ -255,7 +309,12 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
             period: "/mo",
             badge: "Most Popular",
             description: "For fast-scaling teams & modern businesses",
-            features: ["Unlimited projects", "Advanced AI tools", "24/7 Priority support", "Custom integrations"],
+            features: [
+              "Unlimited projects",
+              "Advanced AI tools",
+              "24/7 Priority support",
+              "Custom integrations",
+            ],
             featured: true,
             cta: { label: "Get Started", href: "/contact" },
           },
@@ -264,7 +323,12 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
             price: "$199",
             period: "/mo",
             description: "For established organizations with custom needs",
-            features: ["Dedicated account manager", "Custom SLA & security", "SSO & SAML", "Unlimited capacity"],
+            features: [
+              "Dedicated account manager",
+              "Custom SLA & security",
+              "SSO & SAML",
+              "Unlimited capacity",
+            ],
             featured: false,
             cta: { label: "Contact Sales", href: "/contact" },
           },
@@ -274,15 +338,28 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "cta": {
-      const validCtaVariants = ["centered-card", "split-visual", "floating-card", "minimal-editorial"];
-      if (typeof data.variant !== "string" || !validCtaVariants.includes(data.variant)) {
+      const validCtaVariants = [
+        "centered-card",
+        "split-visual",
+        "floating-card",
+        "minimal-editorial",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validCtaVariants.includes(data.variant)
+      ) {
         data.variant = "centered-card";
       }
       if (!data.heading) data.heading = "Ready to elevate your workflow?";
       if (!data.text && data.description) data.text = data.description;
-      if (!data.text) data.text = "Join thousands of satisfied teams building better web experiences today.";
+      if (!data.text)
+        data.text =
+          "Join thousands of satisfied teams building better web experiences today.";
       const rawBtn = data.button || data.primaryButton || data.cta;
-      if (!rawBtn || typeof (rawBtn as Record<string, unknown>)?.label !== "string") {
+      if (
+        !rawBtn ||
+        typeof (rawBtn as Record<string, unknown>)?.label !== "string"
+      ) {
         data.button = { label: "Get Started Today", href: "/contact" };
       } else {
         data.button = rawBtn;
@@ -291,23 +368,55 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "features": {
-      const validFeaturesVariants = ["grid", "split", "pastel-icons", "minimal", "cards"];
-      if (typeof data.variant !== "string" || !validFeaturesVariants.includes(data.variant)) {
+      const validFeaturesVariants = [
+        "grid",
+        "split",
+        "pastel-icons",
+        "minimal",
+        "cards",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validFeaturesVariants.includes(data.variant)
+      ) {
         data.variant = "pastel-icons";
       }
       if (!data.heading) data.heading = "Engineered for high performance";
       if (!Array.isArray(data.items) || data.items.length === 0) {
         data.items = [
-          { icon: "bolt", iconColor: "orange", title: "Blazing Fast Speed", description: "Optimized for lightning-quick interaction and responsiveness." },
-          { icon: "shield", iconColor: "green", title: "Enterprise Security", description: "End-to-end encryption with advanced privacy protocols." },
-          { icon: "sparkles", iconColor: "purple", title: "Next-Gen AI", description: "Built-in intelligent automation tailored to your exact needs." },
+          {
+            icon: "bolt",
+            iconColor: "orange",
+            title: "Blazing Fast Speed",
+            description:
+              "Optimized for lightning-quick interaction and responsiveness.",
+          },
+          {
+            icon: "shield",
+            iconColor: "green",
+            title: "Enterprise Security",
+            description:
+              "End-to-end encryption with advanced privacy protocols.",
+          },
+          {
+            icon: "sparkles",
+            iconColor: "purple",
+            title: "Next-Gen AI",
+            description:
+              "Built-in intelligent automation tailored to your exact needs.",
+          },
         ];
       } else {
         data.items = (data.items as any[]).map((item, idx) => ({
-          title: typeof item?.title === "string" ? item.title : `Feature ${idx + 1}`,
-          description: typeof item?.description === "string" ? item.description : "High-impact capabilities designed for modern growth.",
+          title:
+            typeof item?.title === "string" ? item.title : `Feature ${idx + 1}`,
+          description:
+            typeof item?.description === "string"
+              ? item.description
+              : "High-impact capabilities designed for modern growth.",
           icon: typeof item?.icon === "string" ? item.icon : "sparkles",
-          iconColor: typeof item?.iconColor === "string" ? item.iconColor : "purple",
+          iconColor:
+            typeof item?.iconColor === "string" ? item.iconColor : "purple",
           badge: typeof item?.badge === "string" ? item.badge : undefined,
         }));
       }
@@ -317,16 +426,38 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "services": {
-      const validServicesVariants = ["cards-grid", "bento-grid", "split-showcase", "interactive-list", "horizontal-cards", "minimal-numbered"];
-      if (typeof data.variant !== "string" || !validServicesVariants.includes(data.variant)) {
+      const validServicesVariants = [
+        "cards-grid",
+        "bento-grid",
+        "split-showcase",
+        "interactive-list",
+        "horizontal-cards",
+        "minimal-numbered",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validServicesVariants.includes(data.variant)
+      ) {
         data.variant = "cards-grid";
       }
       if (!data.heading) data.heading = "Our Core Solutions";
       if (!Array.isArray(data.items) || data.items.length === 0) {
         data.items = [
-          { title: "Strategic Architecture", description: "Comprehensive roadmap and blueprinting tailored to business scale." },
-          { title: "End-to-End Implementation", description: "Pixel-perfect delivery with clean, production-ready engineering." },
-          { title: "24/7 Managed Growth", description: "Continuous optimization, performance monitoring, and proactive support." },
+          {
+            title: "Strategic Architecture",
+            description:
+              "Comprehensive roadmap and blueprinting tailored to business scale.",
+          },
+          {
+            title: "End-to-End Implementation",
+            description:
+              "Pixel-perfect delivery with clean, production-ready engineering.",
+          },
+          {
+            title: "24/7 Managed Growth",
+            description:
+              "Continuous optimization, performance monitoring, and proactive support.",
+          },
         ];
       }
       if (!data.columns) data.columns = 3;
@@ -335,48 +466,104 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "hero": {
-      const validHeroVariants = ["centered", "split", "split-left", "background-image", "video-bg", "gradient", "curved-bottom", "soft-card", "minimal-typography", "floating-cards", "asymmetric"];
-      if (typeof data.variant !== "string" || !validHeroVariants.includes(data.variant)) {
+      const validHeroVariants = [
+        "centered",
+        "split",
+        "split-left",
+        "background-image",
+        "video-bg",
+        "gradient",
+        "curved-bottom",
+        "soft-card",
+        "minimal-typography",
+        "floating-cards",
+        "asymmetric",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validHeroVariants.includes(data.variant)
+      ) {
         data.variant = data.backgroundImage ? "background-image" : "centered";
       }
-      const validImagePositions = ["right", "left", "bottom", "background", "card"];
-      if (data.imagePosition && !validImagePositions.includes(data.imagePosition as string)) {
+      const validImagePositions = [
+        "right",
+        "left",
+        "bottom",
+        "background",
+        "card",
+      ];
+      if (
+        data.imagePosition &&
+        !validImagePositions.includes(data.imagePosition as string)
+      ) {
         delete data.imagePosition;
       }
       const validBgPositions = ["bottom", "center", "top", "cover"];
-      if (data.bgImagePosition && !validBgPositions.includes(data.bgImagePosition as string)) {
+      if (
+        data.bgImagePosition &&
+        !validBgPositions.includes(data.bgImagePosition as string)
+      ) {
         delete data.bgImagePosition;
       }
       const validBgOverlays = ["dark", "light", "gradient", "none"];
-      if (data.bgOverlayType && !validBgOverlays.includes(data.bgOverlayType as string)) {
+      if (
+        data.bgOverlayType &&
+        !validBgOverlays.includes(data.bgOverlayType as string)
+      ) {
         delete data.bgOverlayType;
       }
       const validImageStyles = ["mockup", "rounded", "glow", "shadow", "plain"];
-      if (data.imageStyle && !validImageStyles.includes(data.imageStyle as string)) {
+      if (
+        data.imageStyle &&
+        !validImageStyles.includes(data.imageStyle as string)
+      ) {
         delete data.imageStyle;
       }
       const validMinHeights = ["auto", "compact", "screen", "tall"];
-      if (data.minHeight && !validMinHeights.includes(data.minHeight as string)) {
+      if (
+        data.minHeight &&
+        !validMinHeights.includes(data.minHeight as string)
+      ) {
         delete data.minHeight;
       }
       const validAligns = ["center", "left", "right"];
-      if (data.contentAlign && !validAligns.includes(data.contentAlign as string)) {
+      if (
+        data.contentAlign &&
+        !validAligns.includes(data.contentAlign as string)
+      ) {
         delete data.contentAlign;
       }
       const validBottomShapes = ["none", "wave", "curve", "slant", "tilt"];
-      if (data.bottomShape && !validBottomShapes.includes(data.bottomShape as string)) {
+      if (
+        data.bottomShape &&
+        !validBottomShapes.includes(data.bottomShape as string)
+      ) {
         delete data.bottomShape;
       }
       if (!data.heading) data.heading = "Transform Your Digital Vision";
-      if (!data.primaryCta || typeof (data.primaryCta as Record<string, unknown>)?.label !== "string") {
+      if (
+        !data.primaryCta ||
+        typeof (data.primaryCta as Record<string, unknown>)?.label !== "string"
+      ) {
         data.primaryCta = { label: "Get Started", href: "/contact" };
       }
       break;
     }
 
     case "carousel": {
-      const validCarouselVariants = ["cards", "hero-slider", "showcase", "minimal-editorial", "image-gallery", "image-strip", "image-coverflow"];
-      if (typeof data.variant !== "string" || !validCarouselVariants.includes(data.variant)) {
+      const validCarouselVariants = [
+        "cards",
+        "hero-slider",
+        "showcase",
+        "minimal-editorial",
+        "image-gallery",
+        "image-strip",
+        "image-coverflow",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validCarouselVariants.includes(data.variant)
+      ) {
         data.variant = "cards";
       }
       if (typeof data.autoplay === "boolean" && data.autoPlay === undefined) {
@@ -387,16 +574,37 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "faq": {
-      const validFaqVariants = ["accordion-classic", "two-column-grid", "split-sidebar", "minimal-numbered", "categorized-cards"];
-      if (typeof data.variant !== "string" || !validFaqVariants.includes(data.variant)) {
+      const validFaqVariants = [
+        "accordion-classic",
+        "two-column-grid",
+        "split-sidebar",
+        "minimal-numbered",
+        "categorized-cards",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validFaqVariants.includes(data.variant)
+      ) {
         data.variant = "accordion-classic";
       }
       if (!data.heading) data.heading = "Frequently Asked Questions";
       if (!Array.isArray(data.items) || data.items.length === 0) {
         data.items = [
-          { question: "How quickly can we get started?", answer: "You can start immediately with our intuitive builder and 1-click publishing." },
-          { question: "Can I customize the sections later?", answer: "Yes, every single block, color, and typography style is fully customizable." },
-          { question: "Is support included?", answer: "Our dedicated engineering support team is available 24/7 for all tiers." },
+          {
+            question: "How quickly can we get started?",
+            answer:
+              "You can start immediately with our intuitive builder and 1-click publishing.",
+          },
+          {
+            question: "Can I customize the sections later?",
+            answer:
+              "Yes, every single block, color, and typography style is fully customizable.",
+          },
+          {
+            question: "Is support included?",
+            answer:
+              "Our dedicated engineering support team is available 24/7 for all tiers.",
+          },
         ];
       }
       break;
@@ -406,16 +614,34 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
       if (!data.heading) data.heading = "Loved by Industry Leaders";
       if (!Array.isArray(data.items) || data.items.length === 0) {
         data.items = [
-          { quote: "This platform completely revolutionized our digital presence in days.", name: "Sarah Jenkins", role: "VP of Product, Apex Digital" },
-          { quote: "The speed, aesthetic quality, and precision are truly second to none.", name: "David Chen", role: "Founder & CTO, Nexus AI" },
+          {
+            quote:
+              "This platform completely revolutionized our digital presence in days.",
+            name: "Sarah Jenkins",
+            role: "VP of Product, Apex Digital",
+          },
+          {
+            quote:
+              "The speed, aesthetic quality, and precision are truly second to none.",
+            name: "David Chen",
+            role: "Founder & CTO, Nexus AI",
+          },
         ];
       }
       break;
     }
 
     case "team": {
-      const validTeamVariants = ["grid-cards", "spotlight-featured", "minimal-editorial", "glass-overlay"];
-      if (typeof data.variant !== "string" || !validTeamVariants.includes(data.variant)) {
+      const validTeamVariants = [
+        "grid-cards",
+        "spotlight-featured",
+        "minimal-editorial",
+        "glass-overlay",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validTeamVariants.includes(data.variant)
+      ) {
         data.variant = "grid-cards";
       }
       if (!data.heading) data.heading = "Meet the Minds Behind the Platform";
@@ -425,8 +651,20 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "header": {
-      const validHeaderDesigns = ["logo-left", "centered", "classical", "minimalist", "comprehensive", "ecommerce", "floating", "transparent"];
-      if (typeof data.design !== "string" || !validHeaderDesigns.includes(data.design)) {
+      const validHeaderDesigns = [
+        "logo-left",
+        "centered",
+        "classical",
+        "minimalist",
+        "comprehensive",
+        "ecommerce",
+        "floating",
+        "transparent",
+      ];
+      if (
+        typeof data.design !== "string" ||
+        !validHeaderDesigns.includes(data.design)
+      ) {
         data.design = "logo-left";
       }
       if (!data.siteName) {
@@ -441,12 +679,23 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
         ];
       } else {
         // Cap menu items at 5 to prevent header overflow and ensure clean spacing
-        data.menu = (data.menu as Array<{ label?: string; href?: string }>).slice(0, 5).map((m, idx) => ({
-          label: typeof m?.label === "string" && m.label.trim() ? m.label.trim() : `Link ${idx + 1}`,
-          href: typeof m?.href === "string" && m.href.trim() ? m.href.trim() : "#",
-        }));
+        data.menu = (data.menu as Array<{ label?: string; href?: string }>)
+          .slice(0, 5)
+          .map((m, idx) => ({
+            label:
+              typeof m?.label === "string" && m.label.trim()
+                ? m.label.trim()
+                : `Link ${idx + 1}`,
+            href:
+              typeof m?.href === "string" && m.href.trim()
+                ? m.href.trim()
+                : "#",
+          }));
       }
-      if (!data.cta || typeof (data.cta as Record<string, unknown>)?.label !== "string") {
+      if (
+        !data.cta ||
+        typeof (data.cta as Record<string, unknown>)?.label !== "string"
+      ) {
         data.cta = { label: "Get Started", href: "/contact" };
       }
       data.sticky = Boolean(data.sticky);
@@ -454,8 +703,20 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
     }
 
     case "footer": {
-      const validFooterDesigns = ["columns", "simple", "mega", "newsletter", "split", "inline", "centered", "cta-banner"];
-      if (typeof data.design !== "string" || !validFooterDesigns.includes(data.design)) {
+      const validFooterDesigns = [
+        "columns",
+        "simple",
+        "mega",
+        "newsletter",
+        "split",
+        "inline",
+        "centered",
+        "cta-banner",
+      ];
+      if (
+        typeof data.design !== "string" ||
+        !validFooterDesigns.includes(data.design)
+      ) {
         data.design = "columns";
       }
       if (!data.siteName) {
@@ -463,8 +724,20 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
       }
       if (!Array.isArray(data.columns) || data.columns.length === 0) {
         data.columns = [
-          { title: "Product", links: [{ label: "Features", href: "#features" }, { label: "Pricing", href: "#pricing" }] },
-          { title: "Company", links: [{ label: "About", href: "#about" }, { label: "Contact", href: "#contact" }] },
+          {
+            title: "Product",
+            links: [
+              { label: "Features", href: "#features" },
+              { label: "Pricing", href: "#pricing" },
+            ],
+          },
+          {
+            title: "Company",
+            links: [
+              { label: "About", href: "#about" },
+              { label: "Contact", href: "#contact" },
+            ],
+          },
         ];
       }
       if (!data.copyright) {
@@ -620,7 +893,11 @@ ${SECTION_SCHEMAS_GUIDE}
 
 type OpenAiMessage = { role: "system" | "user" | "assistant"; content: string };
 
-type LoggingContext = { clientId?: string; websiteId?: string; userId?: string };
+type LoggingContext = {
+  clientId?: string;
+  websiteId?: string;
+  userId?: string;
+};
 
 type OpenAiCallOptions = {
   scope: string;
@@ -628,24 +905,35 @@ type OpenAiCallOptions = {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: Record<string, unknown>;
+  signal?: AbortSignal;
 };
 
 const PLANNER_HISTORY_TURNS = 6;
-const FALLBACK_CLARIFY_REPLY = "I couldn't match that to a section on this page. Which section do you mean?";
+const FALLBACK_CLARIFY_REPLY =
+  "I couldn't match that to a section on this page. Which section do you mean?";
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> {
   try {
     return asRecord(JSON.parse(raw));
   } catch {
-    throw new AppError(502, "Failed to parse structured JSON response from AI.");
+    throw new AppError(
+      502,
+      "Failed to parse structured JSON response from AI.",
+    );
   }
 }
 
-function buildSection(type: string, raw: Record<string, unknown>, id: string = crypto.randomUUID()): SectionEnvelope {
+function buildSection(
+  type: string,
+  raw: Record<string, unknown>,
+  id: string = crypto.randomUUID(),
+): SectionEnvelope {
   return {
     id,
     type,
@@ -663,8 +951,65 @@ function focusSectionId(ops: readonly CanvasOp[]): string | undefined {
 }
 
 export class AiGeneratorService {
-  private async callOpenAi(messages: OpenAiMessage[], options: OpenAiCallOptions): Promise<string> {
-    const { scope, logging, temperature = 0.7, maxTokens = 3000, responseFormat = { type: "json_object" } } = options;
+  /**
+   * Runs free OpenAI Moderation check on user input to filter toxic, illegal or harmful content.
+   */
+  private async checkModeration(
+    text: string,
+    apiKey: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!text || !text.trim()) return;
+    try {
+      const timeoutSignal = AbortSignal.timeout(10_000);
+      const combinedSignal = signal
+        ? AbortSignal.any([signal, timeoutSignal])
+        : timeoutSignal;
+
+      const res = await fetch("https://api.openai.com/v1/moderations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ input: text }),
+        signal: combinedSignal,
+      });
+
+      if (!res.ok) return; // Fail-open so moderation transient error doesn't block legit requests
+      const json = (await res.json()) as {
+        results?: Array<{ flagged: boolean }>;
+      };
+      if (json.results?.[0]?.flagged) {
+        throw new AppError(
+          400,
+          "Your prompt was flagged by content safety moderation as potentially violating usage policies.",
+        );
+      }
+    } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
+      if (signal?.aborted) {
+        throw new AppError(499, "AI generation was cancelled.");
+      }
+      logger.warn(
+        { err },
+        "OpenAI moderation check encountered a non-fatal warning",
+      );
+    }
+  }
+
+  private async callOpenAi(
+    messages: OpenAiMessage[],
+    options: OpenAiCallOptions,
+  ): Promise<string> {
+    const {
+      scope,
+      logging,
+      temperature = 0.7,
+      maxTokens = 3000,
+      responseFormat = { type: "json_object" },
+      signal,
+    } = options;
     const { apiKey, model } = await aiSettingsService.getCredentials(logging.clientId);
     if (!apiKey) {
       throw new AppError(
@@ -675,63 +1020,167 @@ export class AiGeneratorService {
 
     // OpenAI json_object mode requires the word "json" somewhere in the messages.
     const needsJsonHint =
-      responseFormat.type === "json_object" && !messages.some((m) => m.content.toLowerCase().includes("json"));
+      responseFormat.type === "json_object" &&
+      !messages.some((m) => m.content.toLowerCase().includes("json"));
     const safeMessages = needsJsonHint
       ? messages.map((m, idx) =>
-          idx === 0 ? { ...m, content: `${m.content}\n\nIMPORTANT: Respond strictly in valid JSON format.` } : m,
+          idx === 0
+            ? {
+                ...m,
+                content: `${m.content}\n\nIMPORTANT: Respond strictly in valid JSON format.`,
+              }
+            : m,
         )
       : messages;
 
     const startMs = Date.now();
-    const effectiveModel = model || "gpt-4o-mini";
-    const reasoning = isReasoningModel(effectiveModel);
+    const primaryModel = model || "gpt-4o-mini";
+    const fallbackModel = primaryModel === "gpt-4o" ? "gpt-4o-mini" : null;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: effectiveModel,
-        messages: safeMessages,
-        response_format: responseFormat,
-        // Reasoning models reject temperature, and their hidden reasoning tokens count against the completion budget.
-        ...(reasoning ? { max_completion_tokens: maxTokens * 4 } : { temperature, max_tokens: maxTokens }),
-      }),
-    });
+    const executeCallWithRetry = async (
+      targetModel: string,
+    ): Promise<{
+      content: string;
+      modelUsed: string;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
+    }> => {
+      const maxRetries = 2;
+      let lastError: Error | null = null;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMsg = `OpenAI API returned status ${response.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        if (errorJson.error?.message) {
-          errorMsg = errorJson.error.message;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (signal?.aborted) {
+          throw new AppError(499, "AI generation was cancelled.");
         }
-      } catch {
-        // use default errorMsg
+
+        const timeoutSignal = AbortSignal.timeout(60_000);
+        const combinedSignal = signal
+          ? AbortSignal.any([signal, timeoutSignal])
+          : timeoutSignal;
+
+        const reasoning = isReasoningModel(targetModel);
+
+        try {
+          const response = await fetch(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: targetModel,
+                messages: safeMessages,
+                response_format: responseFormat,
+                // Reasoning models reject temperature, and their hidden reasoning tokens count against the completion budget.
+                ...(reasoning
+                  ? { max_completion_tokens: maxTokens * 4 }
+                  : { temperature, max_tokens: maxTokens }),
+              }),
+              signal: combinedSignal,
+            },
+          );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            let errorMsg = `OpenAI API returned status ${response.status}`;
+            try {
+              const errorJson = JSON.parse(errorText);
+              if (errorJson.error?.message) {
+                errorMsg = errorJson.error.message;
+              }
+            } catch {
+              // use default errorMsg
+            }
+
+            if (response.status === 401) {
+              throw new AppError(
+                401,
+                `Invalid OpenAI API Key (${errorMsg}). Please paste your valid OpenAI API key in Super Admin > Settings > AI Settings.`,
+              );
+            }
+
+            // Retry on 429 rate limit or 5xx server issues
+            if (
+              (response.status === 429 || response.status >= 500) &&
+              attempt < maxRetries
+            ) {
+              const delay = Math.pow(2, attempt) * 1000;
+              logger.warn(
+                { status: response.status, attempt, delay, targetModel },
+                "OpenAI rate-limited or error encountered, retrying...",
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue;
+            }
+
+            if (response.status === 429) {
+              throw new AppError(
+                429,
+                `OpenAI Rate Limit or Quota Exceeded (${errorMsg}). Please check your OpenAI account credits or update your key in Super Admin > Settings > AI Settings.`,
+              );
+            }
+
+            throw new AppError(502, `AI Generation Failed: ${errorMsg}`);
+          }
+
+          const json = (await response.json()) as {
+            model?: string;
+            choices?: Array<{ message?: { content?: string | null } }>;
+            usage?: {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              total_tokens?: number;
+            };
+          };
+
+          const content = json.choices?.[0]?.message?.content;
+          if (!content) {
+            throw new AppError(502, "OpenAI returned an empty response");
+          }
+
+          return {
+            content,
+            modelUsed: json.model || targetModel,
+            usage: json.usage,
+          };
+        } catch (err: unknown) {
+          if (signal?.aborted || (err as Error)?.name === "AbortError") {
+            throw new AppError(499, "AI generation was cancelled.");
+          }
+          if (
+            err instanceof AppError &&
+            (err.statusCode === 401 ||
+              err.statusCode === 429 ||
+              err.statusCode === 400)
+          ) {
+            throw err;
+          }
+          lastError = err as Error;
+          if (attempt < maxRetries) {
+            const delay = Math.pow(2, attempt) * 1000;
+            logger.warn(
+              { err, attempt, delay },
+              "OpenAI call failed, retrying...",
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
       }
 
-      if (response.status === 401) {
-        throw new AppError(
-          401,
-          `Invalid OpenAI API Key (${errorMsg}). Please paste your valid OpenAI API key in Super Admin > Settings > AI Settings.`,
-        );
-      }
-      if (response.status === 429) {
-        throw new AppError(
-          429,
-          `OpenAI Rate Limit or Quota Exceeded (${errorMsg}). Please check your OpenAI account credits or update your key in Super Admin > Settings > AI Settings.`,
-        );
-      }
+      throw (
+        lastError ||
+        new AppError(502, "Failed to reach OpenAI service after retries.")
+      );
+    };
 
-      throw new AppError(502, `AI Generation Failed: ${errorMsg}`);
-    }
-
-    const json = (await response.json()) as {
-      model?: string;
-      choices?: Array<{ message?: { content?: string | null } }>;
+    let callResult: {
+      content: string;
+      modelUsed: string;
       usage?: {
         prompt_tokens?: number;
         completion_tokens?: number;
@@ -739,9 +1188,21 @@ export class AiGeneratorService {
       };
     };
 
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) {
-      throw new AppError(502, "OpenAI returned an empty response");
+    try {
+      callResult = await executeCallWithRetry(primaryModel);
+    } catch (primaryErr) {
+      if (
+        fallbackModel &&
+        !(primaryErr instanceof AppError && primaryErr.statusCode === 401)
+      ) {
+        logger.warn(
+          { primaryErr, fallbackModel },
+          "Primary model failed. Attempting fallback model.",
+        );
+        callResult = await executeCallWithRetry(fallbackModel);
+      } else {
+        throw primaryErr;
+      }
     }
 
     if (logging.clientId) {
@@ -751,20 +1212,23 @@ export class AiGeneratorService {
             clientId: logging.clientId,
             websiteId: logging.websiteId || null,
             userId: logging.userId || null,
-            model: json.model || effectiveModel,
+            model: callResult.modelUsed,
             scope,
-            promptTokens: json.usage?.prompt_tokens ?? 0,
-            completionTokens: json.usage?.completion_tokens ?? 0,
-            totalTokens: json.usage?.total_tokens ?? 0,
+            promptTokens: callResult.usage?.prompt_tokens ?? 0,
+            completionTokens: callResult.usage?.completion_tokens ?? 0,
+            totalTokens: callResult.usage?.total_tokens ?? 0,
             durationMs: Date.now() - startMs,
           },
         })
         .catch((err) => {
-          logger.error({ err, clientId: logging.clientId }, "Failed to record AI usage log");
+          logger.error(
+            { err, clientId: logging.clientId },
+            "Failed to record AI usage log",
+          );
         });
     }
 
-    return content;
+    return callResult.content;
   }
 
   /**
@@ -772,23 +1236,62 @@ export class AiGeneratorService {
    * ops that need it (in parallel), then applies all ops deterministically to the canvas.
    * `onPlan` receives the planned layout before content generation, so the editor can show placeholders.
    */
-  async generate(options: GenerateAiOptions, onPlan?: (layout: LayoutSlot[]) => void): Promise<AiSuggestionPayload> {
-    const { prompt, sectionId, currentSection, currentSections = [], history = [], clientId, websiteId, userId } =
-      options;
+  async generate(
+    options: GenerateAiOptions,
+    onPlan?: (layout: LayoutSlot[]) => void,
+  ): Promise<AiSuggestionPayload> {
+    const {
+      prompt,
+      sectionId,
+      currentSection,
+      currentSections = [],
+      history = [],
+      clientId,
+      websiteId,
+      userId,
+      signal,
+    } = options;
     const logging: LoggingContext = { clientId, websiteId, userId };
 
-    const plan = await this.plan(prompt, currentSections, currentSection?.id ?? sectionId, history, logging);
-
-    if (plan.intent !== "edit" || plan.ops.length === 0) {
-      const reply = plan.intent === "edit" || !plan.reply ? FALLBACK_CLARIFY_REPLY : plan.reply;
-      return { id: crypto.randomUUID(), prompt, summary: reply, chatReply: reply, target: { scope: "chat" }, before: [], after: [] };
+    const { apiKey } = await aiSettingsService.getCredentials(clientId);
+    if (apiKey) {
+      await this.checkModeration(prompt, apiKey, signal);
     }
 
-    const addIds = plan.ops.map((op) => (op.op === "add" ? crypto.randomUUID() : undefined));
+    const plan = await this.plan(
+      prompt,
+      currentSections,
+      currentSection?.id ?? sectionId,
+      history,
+      logging,
+      signal,
+    );
+
+    if (plan.intent !== "edit" || plan.ops.length === 0) {
+      const reply =
+        plan.intent === "edit" || !plan.reply
+          ? FALLBACK_CLARIFY_REPLY
+          : plan.reply;
+      return {
+        id: crypto.randomUUID(),
+        prompt,
+        summary: reply,
+        chatReply: reply,
+        target: { scope: "chat" },
+        before: [],
+        after: [],
+      };
+    }
+
+    const addIds = plan.ops.map((op) =>
+      op.op === "add" ? crypto.randomUUID() : undefined,
+    );
     onPlan?.(previewLayout(currentSections, plan.ops, addIds));
 
     const canvasOps = await Promise.all(
-      plan.ops.map((op, i) => this.materialize(op, currentSections, logging, addIds[i])),
+      plan.ops.map((op, i) =>
+        this.materialize(op, currentSections, logging, addIds[i], signal),
+      ),
     );
     const summary = plan.reply || "Updated the page";
 
@@ -825,11 +1328,17 @@ export class AiGeneratorService {
     selectedSectionId: string | undefined,
     history: ChatHistoryMessage[],
     logging: LoggingContext,
+    signal?: AbortSignal,
   ) {
     const messages: OpenAiMessage[] = [
       { role: "system", content: PLANNER_SYSTEM_PROMPT },
-      ...history.slice(-PLANNER_HISTORY_TURNS).map((m) => ({ role: m.role, content: m.content })),
-      { role: "user", content: buildPlannerInput(prompt, sections, selectedSectionId) },
+      ...history
+        .slice(-PLANNER_HISTORY_TURNS)
+        .map((m) => ({ role: m.role, content: m.content })),
+      {
+        role: "user",
+        content: buildPlannerInput(prompt, sections, selectedSectionId),
+      },
     ];
 
     const raw = await this.callOpenAi(messages, {
@@ -838,13 +1347,17 @@ export class AiGeneratorService {
       temperature: 0,
       maxTokens: 1200,
       responseFormat: AI_PLAN_RESPONSE_FORMAT,
+      signal,
     });
 
     try {
       return parsePlan(JSON.parse(raw), sections);
     } catch (err) {
       logger.warn({ err }, "Rejected invalid AI plan");
-      throw new AppError(502, "AI could not understand that request. Please try rephrasing it.");
+      throw new AppError(
+        502,
+        "AI could not understand that request. Please try rephrasing it.",
+      );
     }
   }
 
@@ -853,21 +1366,49 @@ export class AiGeneratorService {
     sections: SectionEnvelope[],
     logging: LoggingContext,
     reservedId?: string,
+    signal?: AbortSignal,
   ): Promise<CanvasOp> {
     switch (op.op) {
       case "add":
         return {
           op: "add",
           position: op.position,
-          section: await this.createSection(op.sectionType, op.instruction, logging, reservedId),
+          section: await this.createSection(
+            op.sectionType,
+            op.instruction,
+            logging,
+            reservedId,
+            signal,
+          ),
         };
       case "update": {
         const target = sections.find((s) => s.id === op.sectionId);
-        if (!target) throw new AppError(422, "AI referenced a section that is not on the page.");
-        return { op: "update", section: await this.editSection(target, op.instruction, logging) };
+        if (!target)
+          throw new AppError(
+            422,
+            "AI referenced a section that is not on the page.",
+          );
+        return {
+          op: "update",
+          section: await this.editSection(
+            target,
+            op.instruction,
+            logging,
+            signal,
+          ),
+        };
       }
       case "replace_page":
-        return { op: "replace_page", sections: await this.createPage(op.sectionTypes, op.instruction, sections, logging) };
+        return {
+          op: "replace_page",
+          sections: await this.createPage(
+            op.sectionTypes,
+            op.instruction,
+            sections,
+            logging,
+            signal,
+          ),
+        };
       default:
         return op;
     }
@@ -878,20 +1419,33 @@ export class AiGeneratorService {
     instruction: string,
     logging: LoggingContext,
     id?: string,
+    signal?: AbortSignal,
   ): Promise<SectionEnvelope> {
     const raw = await this.callOpenAi(
       [
         { role: "system", content: SYSTEM_PROMPT_ADD_SECTION },
-        { role: "user", content: `Section type to create: "${type}"\nBrief: ${instruction}\n\nReturn the complete section JSON.` },
+        {
+          role: "user",
+          content: `Section type to create: "${type}"\nBrief: ${instruction}\n\nReturn the complete section JSON.`,
+        },
       ],
-      { scope: "section_add", logging },
+      { scope: "section_add", logging, signal },
     );
     const parsed = parseJsonObject(raw);
     const section = asRecord(parsed.section);
-    return buildSection(type, Object.keys(section).length > 0 ? section : parsed, id);
+    return buildSection(
+      type,
+      Object.keys(section).length > 0 ? section : parsed,
+      id,
+    );
   }
 
-  private async editSection(target: SectionEnvelope, instruction: string, logging: LoggingContext): Promise<SectionEnvelope> {
+  private async editSection(
+    target: SectionEnvelope,
+    instruction: string,
+    logging: LoggingContext,
+    signal?: AbortSignal,
+  ): Promise<SectionEnvelope> {
     const raw = await this.callOpenAi(
       [
         { role: "system", content: SYSTEM_PROMPT_SECTION_EDIT },
@@ -906,14 +1460,20 @@ Change to make: ${instruction}
 Return the updated section JSON. If changing color/background, use a valid 6-digit hex in settings.customColors.`,
         },
       ],
-      { scope: "section", logging },
+      { scope: "section", logging, signal },
     );
     const parsed = parseJsonObject(raw);
 
     return {
       ...target,
-      settings: sanitizeSectionSettings({ ...target.settings, ...asRecord(parsed.settings) }),
-      data: sanitizeSectionData(target.type, { ...target.data, ...asRecord(parsed.data) }),
+      settings: sanitizeSectionSettings({
+        ...target.settings,
+        ...asRecord(parsed.settings),
+      }),
+      data: sanitizeSectionData(target.type, {
+        ...target.data,
+        ...asRecord(parsed.data),
+      }),
     };
   }
 
@@ -923,9 +1483,12 @@ Return the updated section JSON. If changing color/background, use a valid 6-dig
     instruction: string,
     existing: SectionEnvelope[],
     logging: LoggingContext,
+    signal?: AbortSignal,
   ): Promise<SectionEnvelope[]> {
     const reusable = new Map(
-      existing.filter((s) => s.type === "header" || s.type === "footer").map((s) => [s.type, s] as const),
+      existing
+        .filter((s) => s.type === "header" || s.type === "footer")
+        .map((s) => [s.type, s] as const),
     );
     const toGenerate = types.filter((type) => !reusable.has(type));
 
@@ -934,9 +1497,12 @@ Return the updated section JSON. If changing color/background, use a valid 6-dig
       const raw = await this.callOpenAi(
         [
           { role: "system", content: SYSTEM_PROMPT_PAGE },
-          { role: "user", content: `Section types in order: ${JSON.stringify(toGenerate)}\nBrief: ${instruction}` },
+          {
+            role: "user",
+            content: `Section types in order: ${JSON.stringify(toGenerate)}\nBrief: ${instruction}`,
+          },
         ],
-        { scope: "page", logging, maxTokens: 6000 },
+        { scope: "page", logging, maxTokens: 6000, signal },
       );
       const sections = parseJsonObject(raw).sections;
       generated = Array.isArray(sections) ? sections.map(asRecord) : [];
@@ -952,7 +1518,10 @@ Return the updated section JSON. If changing color/background, use a valid 6-dig
     });
 
     if (page.length === 0) {
-      throw new AppError(502, "AI did not generate any page sections. Please try a more specific prompt.");
+      throw new AppError(
+        502,
+        "AI did not generate any page sections. Please try a more specific prompt.",
+      );
     }
     return page;
   }

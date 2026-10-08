@@ -24,6 +24,7 @@ import type {
   SaveSectionInput,
   SaveTemplateInput,
   TemplateListQuery,
+  TemplatePreview,
   ThemeSummary,
   UpdateTemplateInput,
   UpdateWebsiteInput,
@@ -201,6 +202,42 @@ function fillPlaceholders<T>(value: T, vars: Record<string, string>): T {
   return value;
 }
 
+type TemplateWithTheme = WebsiteTemplate & { theme: { settings: Prisma.JsonValue } | null };
+
+/** Pages, header and footer a template produces for a site named `siteName`; contact details are added by the caller. */
+function buildTemplateContent(
+  template: TemplateWithTheme | null,
+  siteName: string,
+  websiteName: string,
+): { pages: TemplatePage[]; header: HeaderData; footer: FooterData } {
+  const vars = { businessName: siteName, websiteName };
+  const pages = template ? fillPlaceholders(template.pages as unknown as TemplatePage[], vars) : BLANK_PAGES;
+  const templateHeader = template ? (template.header as unknown as TemplateHeader) : BLANK_HEADER;
+  const templateFooter = template ? fillPlaceholders(template.footer as unknown as TemplateFooter, vars) : BLANK_FOOTER;
+  const navLinks: LinkRef[] = pages
+    .filter((page) => page.showInNav && page.visible !== false)
+    .slice(0, 12)
+    .map((page) => ({ label: page.name, href: page.slug }));
+
+  return {
+    pages,
+    header: { ...templateHeader, siteName, menu: navLinks },
+    footer: {
+      ...templateFooter,
+      siteName,
+      columns:
+        templateFooter.design === "columns" && templateFooter.columns.length === 0 && navLinks.length > 0
+          ? [{ title: "Pages", links: navLinks }]
+          : templateFooter.columns,
+      copyright: `© ${new Date().getFullYear()} ${siteName}`,
+    },
+  };
+}
+
+function templateTheme(template: TemplateWithTheme | null): Prisma.JsonValue {
+  return template?.themeSettings ?? template?.theme?.settings ?? THEME_SEEDS[0]!.settings;
+}
+
 function slugifySubdomain(name: string): string {
   const slug = name
     .toLowerCase()
@@ -241,6 +278,45 @@ export class WebsiteService {
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     });
     return templates.sort((a, b) => Number(b.clientId !== null) - Number(a.clientId !== null)).map(toTemplateSummary);
+  }
+
+  /** Public: active platform templates for the gallery. */
+  async listPlatformTemplates(): Promise<WebsiteTemplateSummary[]> {
+    const templates = await prisma.websiteTemplate.findMany({
+      where: { clientId: null, isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+    });
+    return templates.map(toTemplateSummary);
+  }
+
+  /** Public: only active platform templates, never a client's private ones. */
+  async getTemplatePreview(key: string): Promise<TemplatePreview> {
+    const template = await prisma.websiteTemplate.findFirst({
+      where: { key, clientId: null, isActive: true },
+      include: { theme: { select: { settings: true } } },
+    });
+    if (!template) throw new AppError(404, "Template not found", "TEMPLATE_NOT_FOUND");
+
+    const { pages, header, footer } = buildTemplateContent(template, template.name, template.name);
+    return {
+      template: toTemplateSummary(template),
+      site: {
+        theme: templateTheme(template) as unknown as ThemeSettings,
+        header,
+        footer,
+        pages: pages
+          .filter((page) => page.visible !== false)
+          .map((page, pageIndex) => ({
+            id: `template-page-${pageIndex}`,
+            name: page.name,
+            slug: page.slug,
+            sections: page.sections.map((section, sectionIndex) => ({
+              ...section,
+              id: `template-section-${pageIndex}-${sectionIndex}`,
+            })) as Section[],
+          })),
+      },
+    };
   }
 
   /** Copies the website's saved draft into a template private to the website's client. */
@@ -419,30 +495,15 @@ export class WebsiteService {
     const name = input.name.trim();
     const businessName = emptyToNull(input.businessName);
     const siteName = (businessName ?? name).slice(0, 120);
-    const vars = { businessName: siteName, websiteName: name };
-
-    const pages = template ? fillPlaceholders(template.pages as unknown as TemplatePage[], vars) : BLANK_PAGES;
-    const templateHeader = template ? (template.header as unknown as TemplateHeader) : BLANK_HEADER;
-    const templateFooter = template
-      ? fillPlaceholders(template.footer as unknown as TemplateFooter, vars)
-      : BLANK_FOOTER;
-    const navLinks: LinkRef[] = pages
-      .filter((page) => page.showInNav && page.visible !== false)
-      .slice(0, 12)
-      .map((page) => ({ label: page.name, href: page.slug }));
+    const content = buildTemplateContent(template, siteName, name);
+    const { pages, header } = content;
 
     const contactEmail = emptyToNull(input.contactEmail);
     const contactPhone = emptyToNull(input.contactPhone);
     const address = emptyToNull(input.address);
 
-    const header: HeaderData = { ...templateHeader, siteName, menu: navLinks };
     const footer: FooterData = {
-      ...templateFooter,
-      siteName,
-      columns:
-        templateFooter.design === "columns" && templateFooter.columns.length === 0 && navLinks.length > 0
-          ? [{ title: "Pages", links: navLinks }]
-          : templateFooter.columns,
+      ...content.footer,
       ...(contactEmail || contactPhone || address
         ? {
             contact: {
@@ -452,12 +513,8 @@ export class WebsiteService {
             },
           }
         : {}),
-      copyright: `© ${new Date().getFullYear()} ${siteName}`,
     };
-    const theme = (chosenTheme?.settings ??
-      template?.themeSettings ??
-      template?.theme?.settings ??
-      THEME_SEEDS[0]!.settings) as Prisma.InputJsonValue;
+    const theme = (chosenTheme?.settings ?? templateTheme(template)) as Prisma.InputJsonValue;
 
     const subdomain = await pickSubdomain(input.subdomain, name);
     let website: WebsiteWithPages;
