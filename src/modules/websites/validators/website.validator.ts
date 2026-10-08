@@ -1,5 +1,6 @@
 import Joi from "joi";
 import { BuilderType, PageType, WebsiteStatus } from "../../../common/constants/website.js";
+import { GENERATION_TONES, MAX_BRIEF_IMAGES, MAX_GENERATED_PAGES } from "../types/website-generation.types.js";
 import { footerSchema, headerSchema, sectionSchema, sectionsSchema, themeSchema } from "./site-content.validator.js";
 
 export const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
@@ -82,6 +83,34 @@ export const createWebsiteSchema = Joi.object({
   ...websiteInfo,
 });
 
+export const createAiWebsiteSchema = Joi.object({
+  clientId: Joi.string().guid().optional(),
+  name: Joi.string().trim().min(2).max(120).required(),
+  themeId: Joi.string().guid().optional(),
+  subdomain: Joi.string()
+    .trim()
+    .lowercase()
+    .pattern(SUBDOMAIN_PATTERN)
+    .optional()
+    .messages({ "string.pattern.base": "Use 3-40 lowercase letters, numbers or hyphens" }),
+  ...websiteInfo,
+  prompt: Joi.string().trim().min(20).max(2000).required().messages({
+    "string.min": "Describe your website in at least 20 characters",
+  }),
+  pages: Joi.array()
+    .items(Joi.string().trim().min(1).max(60))
+    .min(1)
+    .max(MAX_GENERATED_PAGES)
+    .unique((a: string, b: string) => a.toLowerCase() === b.toLowerCase())
+    .required()
+    .messages({ "array.unique": "Page names must be different" }),
+  tone: Joi.string()
+    .valid(...GENERATION_TONES)
+    .optional(),
+  mediaIds: Joi.array().items(Joi.string().guid()).max(MAX_BRIEF_IMAGES).unique().optional(),
+  logoMediaId: Joi.string().guid().optional(),
+});
+
 export const updateWebsiteSchema = Joi.object({
   name: Joi.string().trim().min(2).max(120).optional(),
   ...websiteInfo,
@@ -152,6 +181,7 @@ export const generateAiSuggestionSchema = Joi.object({
   sectionId: Joi.string().trim().max(64).optional(),
   currentSection: sectionSchema.optional(),
   currentSections: Joi.array().items(sectionSchema).max(60).optional(),
+  pageId: Joi.string().trim().max(64).optional(),
   history: Joi.array()
     .items(
       Joi.object({

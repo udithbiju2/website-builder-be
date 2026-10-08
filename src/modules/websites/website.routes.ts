@@ -5,6 +5,7 @@ import { rateLimit } from "../../common/middleware/rate-limit.js";
 import { validate } from "../../common/middleware/validate.js";
 import { websiteController } from "./controllers/website.controller.js";
 import {
+  createAiWebsiteSchema,
   createWebsiteSchema,
   generateAiSuggestionSchema,
   listTemplatesQuerySchema,
@@ -40,7 +41,21 @@ websitesRouter.post(
   validate(createWebsiteSchema),
   websiteController.create,
 );
+websitesRouter.post(
+  "/ai",
+  rateLimit({ name: "website-ai-create", max: 10, windowSeconds: 60 * 60 }),
+  validate(createAiWebsiteSchema),
+  websiteController.createWithAi,
+);
 websitesRouter.get("/:id", byId, websiteController.get);
+websitesRouter.get("/:id/generation", byId, websiteController.generationStatus);
+websitesRouter.post(
+  "/:id/generation/retry",
+  byId,
+  rateLimit({ name: "website-ai-create", max: 10, windowSeconds: 60 * 60 }),
+  websiteController.retryGeneration,
+);
+websitesRouter.delete("/:id/generation", byId, websiteController.dismissGeneration);
 websitesRouter.patch("/:id", byId, validate(updateWebsiteSchema), websiteController.update);
 websitesRouter.delete("/:id", byId, websiteController.delete);
 websitesRouter.put("/:id/draft", byId, validate(saveDraftSchema), websiteController.saveDraft);

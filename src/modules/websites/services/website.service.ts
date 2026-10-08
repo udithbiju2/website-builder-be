@@ -5,7 +5,12 @@ import { AppError } from "../../../common/errors/AppError.js";
 import type { AuthUser } from "../../../common/middleware/authenticate.js";
 import { logger } from "../../../config/logger.js";
 import { prisma } from "../../../config/prisma.js";
-import { Prisma, type SavedSection, type WebsiteTemplate } from "../../../generated/prisma/client.js";
+import {
+  Prisma,
+  type SavedSection,
+  type WebsiteGeneration,
+  type WebsiteTemplate,
+} from "../../../generated/prisma/client.js";
 import { THEME_SEEDS } from "../../../seeder/design-library/themes.js";
 import type { FooterData, HeaderData, LinkRef, Section, ThemeSettings } from "../types/site-content.types.js";
 import type { TemplateFooter, TemplateHeader, TemplatePage } from "../types/template.types.js";
@@ -30,12 +35,14 @@ import type {
   WebsiteTemplateSummary,
   WebsiteVersionView,
 } from "../types/website.types.js";
+import type { GenerationView } from "../types/website-generation.types.js";
 import { SUBDOMAIN_PATTERN } from "../validators/website.validator.js";
 import { buildPublishSnapshot } from "./publish-snapshot.js";
 
 const summaryInclude = {
   client: { select: { businessName: true } },
   _count: { select: { pages: true } },
+  generation: true,
 } as const satisfies Prisma.WebsiteInclude;
 
 const detailInclude = {
@@ -119,6 +126,7 @@ function toSummary(website: WebsiteWithSummary): WebsiteSummary {
     status: website.status,
     subdomain: website.subdomain,
     pageCount: website._count.pages,
+    generationStatus: website.generation?.status ?? null,
     hasUnpublishedChanges: website.publishedAt !== null && website.draftUpdatedAt > website.publishedAt,
     publishedAt: website.publishedAt?.toISOString() ?? null,
     createdAt: website.createdAt.toISOString(),
@@ -157,6 +165,7 @@ function toDetail(website: WebsiteWithPages): WebsiteDetail {
   return {
     ...toSummary(website),
     info: toInfo(website),
+    generation: website.generation ? toGenerationView(website.generation) : null,
     draft: {
       theme: website.theme as unknown as ThemeSettings,
       header: website.header as unknown as HeaderData,
@@ -164,6 +173,18 @@ function toDetail(website: WebsiteWithPages): WebsiteDetail {
       pages: website.pages.map(toPage),
       draftUpdatedAt: website.draftUpdatedAt.toISOString(),
     },
+  };
+}
+
+export function toGenerationView(generation: WebsiteGeneration): GenerationView {
+  return {
+    status: generation.status,
+    step: generation.step,
+    progress: generation.progress,
+    errorMessage: generation.errorMessage,
+    createdAt: generation.createdAt.toISOString(),
+    startedAt: generation.startedAt?.toISOString() ?? null,
+    completedAt: generation.completedAt?.toISOString() ?? null,
   };
 }
 
@@ -366,7 +387,11 @@ export class WebsiteService {
     return toDetail(website);
   }
 
-  async create(input: CreateWebsiteInput, actor: AuthUser): Promise<WebsiteDetail> {
+  async create(
+    input: CreateWebsiteInput,
+    actor: AuthUser,
+    builderType: BuilderType = BuilderType.MANUAL,
+  ): Promise<WebsiteDetail> {
     let clientId: string;
     if (actor.role === UserRole.SUPER_ADMIN) {
       if (!input.clientId) throw new AppError(400, "Choose a client for this website", "CLIENT_REQUIRED");
@@ -441,7 +466,7 @@ export class WebsiteService {
         data: {
           clientId,
           name,
-          builderType: BuilderType.MANUAL,
+          builderType,
           subdomain,
           businessName,
           websiteType: emptyToNull(input.websiteType),

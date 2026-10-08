@@ -1,8 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
+import { BuilderType } from "../../../common/constants/website.js";
 import { AppError } from "../../../common/errors/AppError.js";
 import { logger } from "../../../config/logger.js";
 import type { LayoutSlot } from "../ai/ai-ops.js";
-import { aiGeneratorService, type AiSuggestionPayload } from "../services/ai-generator.service.js";
+import { aiGeneratorService, type AiSuggestionPayload, type GenerateAiOptions } from "../services/ai-generator.service.js";
+import { aiSiteCopilotService } from "../services/ai-site-copilot.service.js";
+import { isGeneratedSectionType } from "../services/site-generator.js";
+import { websiteGenerationService } from "../services/website-generation.service.js";
 import { websiteService } from "../services/website.service.js";
 import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types.js";
 
@@ -109,6 +113,39 @@ export class WebsiteController {
     }
   };
 
+  createWithAi = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.status(201).json({ website: await websiteGenerationService.createWithAi(req.body, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  generationStatus = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json({ generation: await websiteGenerationService.status(req.params.id, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  retryGeneration = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json({ generation: await websiteGenerationService.retry(req.params.id, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  dismissGeneration = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      await websiteGenerationService.dismiss(req.params.id, req.user!);
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  };
+
   update = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
     try {
       res.json({ website: await websiteService.update(req.params.id, req.body, req.user!) });
@@ -162,10 +199,21 @@ export class WebsiteController {
     try {
       // Ensure user has access to this website
       const website = await websiteService.get(req.params.id, req.user!);
-      const options = { ...req.body, clientId: website.clientId, websiteId: website.id, userId: req.user?.id };
+      const body = req.body as GenerateAiOptions;
+      const selectedType = body.scope === "section" ? body.currentSection?.type : undefined;
+      const useCopilot =
+        website.builderType === BuilderType.AI && (selectedType === undefined || isGeneratedSectionType(selectedType));
+
+      const generate = (onPlan?: (layout: LayoutSlot[]) => void): Promise<AiSuggestionPayload> =>
+        useCopilot
+          ? aiSiteCopilotService.generate({ ...body, website, userId: req.user?.id ?? null })
+          : aiGeneratorService.generate(
+              { ...req.body, clientId: website.clientId, websiteId: website.id, userId: req.user?.id },
+              onPlan,
+            );
 
       if (!req.get("accept")?.includes(NDJSON)) {
-        res.json({ suggestion: await aiGeneratorService.generate(options) });
+        res.json({ suggestion: await generate() });
         return;
       }
 
@@ -178,7 +226,7 @@ export class WebsiteController {
       };
 
       try {
-        const suggestion = await aiGeneratorService.generate(options, (layout) => send({ type: "plan", layout }));
+        const suggestion = await generate((layout) => send({ type: "plan", layout }));
         send({ type: "result", suggestion });
         res.end();
       } catch (error) {

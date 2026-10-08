@@ -1,0 +1,35 @@
+enum GenerationStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+/// Background AI build of a website's draft. One row per website; a retry
+/// resets the row. Claimed by the in-process worker with FOR UPDATE SKIP LOCKED.
+model WebsiteGeneration {
+  id            String           @id @default(uuid()) @db.Uuid
+  websiteId     String           @unique @db.Uuid
+  clientId      String           @db.Uuid
+  status        GenerationStatus @default(PENDING)
+  /// The brief: prompt, pages, tone, theme and chosen media ids.
+  input         Json
+  /// Human-readable current step, e.g. "Writing the About page".
+  step          String?          @db.VarChar(120)
+  progress      Int              @default(0)
+  attempts      Int              @default(0)
+  errorMessage  String?          @db.VarChar(500)
+  requestedById String?          @db.Uuid
+  startedAt     DateTime?        @db.Timestamptz(6)
+  completedAt   DateTime?        @db.Timestamptz(6)
+  createdAt     DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime         @updatedAt @db.Timestamptz(6)
+
+  website     Website @relation(fields: [websiteId, clientId], references: [id, clientId], onDelete: Cascade)
+  requestedBy User?   @relation("WebsiteGenerationRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@unique([websiteId, clientId])
+  @@index([status, createdAt])
+  @@index([clientId, status])
+  @@map("website_generations")
+}
