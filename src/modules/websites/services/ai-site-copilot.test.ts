@@ -130,7 +130,7 @@ describe("AI site copilot", () => {
       seo: { title: "Harbor Bakery | Sourdough by the sea", description: "Fresh sourdough and pastries every morning." },
     });
 
-    assert.deepEqual(result.target, { scope: "page" });
+    assert.deepEqual(result.target, { scope: "page", rebuild: false, focusSectionId: "s-hero" });
     assert.deepEqual(
       result.after.map((s) => s.id),
       ["h1", "s-hero", "s-contact", "f1"],

@@ -318,20 +318,25 @@ export function toCopilotSuggestion(options: SiteCopilotOptions, raw: unknown, c
     case "add_section": {
       const created = newSection(reply.section, context);
       if (!created) throw noChange();
-      return { ...base, target: { scope: "section_add", sectionType: created.type }, before: [], after: [created], seo };
+      const footerIdx = sections.findIndex((section) => section.type === "footer");
+      const insertAt = footerIdx === -1 ? sections.length : footerIdx;
+      const after = [...sections.slice(0, insertAt), created, ...sections.slice(insertAt)];
+      return { ...base, target: { scope: "page", rebuild: false, focusSectionId: created.id }, before: sections, after, seo };
     }
     case "rewrite_page": {
       const entries = Array.isArray(reply.sections) ? reply.sections.filter(isRecord) : [];
       let changed = 0;
+      let focusSectionId: string | undefined;
       const after = sections.map((section) => {
         const entry = entries.find((candidate) => candidate.id === section.id);
         const updated = entry ? mergeSection(section, entry, context) : null;
         if (!updated || JSON.stringify(updated) === JSON.stringify(section)) return section;
         changed++;
+        focusSectionId ??= updated.id;
         return updated;
       });
       if (changed === 0 && !seo) throw noChange();
-      return { ...base, target: { scope: "page" }, before: sections, after, seo };
+      return { ...base, target: { scope: "page", rebuild: false, focusSectionId }, before: sections, after, seo };
     }
     case "redesign_page": {
       const rawSections = Array.isArray(reply.sections) ? reply.sections.slice(0, MAX_REDESIGN_SECTIONS) : [];
@@ -339,11 +344,11 @@ export function toCopilotSuggestion(options: SiteCopilotOptions, raw: unknown, c
       if (body.length === 0) throw noChange();
       const headers = sections.filter((section) => section.type === "header");
       const footers = sections.filter((section) => section.type === "footer");
-      return { ...base, target: { scope: "page" }, before: sections, after: [...headers, ...body, ...footers], seo };
+      return { ...base, target: { scope: "page", rebuild: true }, before: sections, after: [...headers, ...body, ...footers], seo };
     }
     case "update_seo": {
       if (!seo) return chat(str(reply.chatReply, 4000));
-      return { ...base, target: { scope: "page" }, before: sections, after: sections, seo };
+      return { ...base, target: { scope: "page", rebuild: false }, before: sections, after: sections, seo };
     }
     default:
       return chat(str(reply.chatReply, 4000));

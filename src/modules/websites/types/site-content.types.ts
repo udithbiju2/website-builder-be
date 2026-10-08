@@ -135,7 +135,37 @@ export const SECTION_TYPES = [
   "team",
   "carousel",
   "marquee",
+  "custom",
 ] as const;
+
+/** Limits for free-form "custom" sections, which the AI composes from layout blocks. */
+export const CUSTOM_LIMITS = {
+  maxDepth: 4,
+  maxBlocks: 60,
+  maxChildren: 12,
+  maxListItems: 12,
+} as const;
+export const CUSTOM_GAPS = ["sm", "md", "lg"] as const;
+export const CUSTOM_ALIGNS = ["start", "center", "end"] as const;
+export const CUSTOM_CARD_TONES = ["default", "muted", "primary", "glass"] as const;
+export const CUSTOM_IMAGE_ASPECTS = ["auto", "square", "video", "portrait"] as const;
+
+export type CustomGap = (typeof CUSTOM_GAPS)[number];
+export type CustomAlign = (typeof CUSTOM_ALIGNS)[number];
+
+export type CustomBlock =
+  | { type: "stack"; direction?: "column" | "row"; gap?: CustomGap; align?: CustomAlign; children: CustomBlock[] }
+  | { type: "grid"; columns: 1 | 2 | 3 | 4; gap?: CustomGap; align?: "start" | "center"; children: CustomBlock[] }
+  | { type: "card"; tone?: (typeof CUSTOM_CARD_TONES)[number]; children: CustomBlock[] }
+  | { type: "heading"; text: string; level?: 1 | 2 | 3 }
+  | { type: "text"; text: string; size?: "sm" | "md" | "lg"; muted?: boolean }
+  | { type: "badge"; text: string }
+  | { type: "button"; label: string; href: string; tone?: "primary" | "secondary" }
+  | { type: "image"; url: string; alt: string; aspect?: (typeof CUSTOM_IMAGE_ASPECTS)[number] }
+  | { type: "icon"; name: IconName }
+  | { type: "list"; items: string[] };
+
+export type CustomContainerBlock = Extract<CustomBlock, { children: CustomBlock[] }>;
 
 export type FontKey = (typeof FONT_KEYS)[number];
 export type IconName = (typeof ICON_NAMES)[number];
@@ -589,6 +619,11 @@ export type SectionDataMap = {
     pauseOnHover?: boolean;
     gradientFades?: boolean;
     fontSize?: "small" | "medium" | "large" | "huge";
+  };
+  custom: {
+    width?: "contained" | "wide";
+    align?: "start" | "center";
+    blocks: CustomBlock[];
   };
 };
 

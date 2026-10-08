@@ -2,6 +2,12 @@ import Joi from "joi";
 import {
   BUTTON_STYLES,
   CARD_STYLES,
+  CUSTOM_ALIGNS,
+  CUSTOM_CARD_TONES,
+  CUSTOM_GAPS,
+  CUSTOM_IMAGE_ASPECTS,
+  CUSTOM_LIMITS,
+  type CustomBlock,
   FONT_KEYS,
   FOOTER_DESIGNS,
   HEADER_DESIGNS,
@@ -20,8 +26,8 @@ import {
  * Content ends up in published HTML, so links and image URLs are limited to
  * schemes that can't execute script, and colors to plain hex values.
  */
-const SAFE_HREF = /^(https?:\/\/\S+|mailto:\S+|tel:[+0-9() -]+|\/(?!\/)\S*|#\S*)$/i;
-const SAFE_IMAGE_URL = /^(https?:\/\/\S+|\/(?!\/)\S*)$/i;
+export const SAFE_HREF = /^(https?:\/\/\S+|mailto:\S+|tel:[+0-9() -]+|\/(?!\/)\S*|#\S*)$/i;
+export const SAFE_IMAGE_URL = /^(https?:\/\/\S+|\/(?!\/)\S*)$/i;
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 /** Only these hosts are embedded, and only via an iframe src the renderer builds itself. */
 export const SAFE_VIDEO_URL =
@@ -71,6 +77,92 @@ const image = Joi.object({
 }).allow(null);
 
 const color = Joi.string().pattern(HEX_COLOR).required().messages({ "string.pattern.base": "Use a #rrggbb color" });
+
+/** Deepest container nesting (1 = flat list of leaf blocks) and total block count. */
+export function measureCustomBlocks(blocks: readonly CustomBlock[]): { depth: number; count: number } {
+  let depth = 0;
+  let count = 0;
+  const walk = (list: readonly CustomBlock[], level: number) => {
+    depth = Math.max(depth, level);
+    for (const block of list) {
+      count += 1;
+      if ("children" in block && Array.isArray(block.children)) walk(block.children, level + 1);
+    }
+  };
+  walk(blocks, 1);
+  return { depth, count };
+}
+
+const customChildren = Joi.array().items(Joi.link("#customBlock")).max(CUSTOM_LIMITS.maxChildren).required();
+const customGap = Joi.string().valid(...CUSTOM_GAPS).optional();
+const customType = (type: CustomBlock["type"]) => Joi.string().valid(type).required();
+
+const customBlockSchema = Joi.alternatives()
+  .try(
+    Joi.object({
+      type: customType("stack"),
+      direction: Joi.string().valid("column", "row").optional(),
+      gap: customGap,
+      align: Joi.string().valid(...CUSTOM_ALIGNS).optional(),
+      children: customChildren,
+    }),
+    Joi.object({
+      type: customType("grid"),
+      columns: Joi.number().valid(1, 2, 3, 4).required(),
+      gap: customGap,
+      align: Joi.string().valid("start", "center").optional(),
+      children: customChildren,
+    }),
+    Joi.object({
+      type: customType("card"),
+      tone: Joi.string().valid(...CUSTOM_CARD_TONES).optional(),
+      children: customChildren,
+    }),
+    Joi.object({ type: customType("heading"), text: text(200).required(), level: Joi.number().valid(1, 2, 3).optional() }),
+    Joi.object({
+      type: customType("text"),
+      text: text(1200).required(),
+      size: Joi.string().valid("sm", "md", "lg").optional(),
+      muted: Joi.boolean().optional(),
+    }),
+    Joi.object({ type: customType("badge"), text: text(60).required() }),
+    Joi.object({
+      type: customType("button"),
+      label: text(80).required(),
+      href: text(2048)
+        .pattern(SAFE_HREF)
+        .required()
+        .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
+      tone: Joi.string().valid("primary", "secondary").optional(),
+    }),
+    Joi.object({
+      type: customType("image"),
+      url: text(2048)
+        .pattern(SAFE_IMAGE_URL)
+        .required()
+        .messages({ "string.pattern.base": "Images must use an http(s) URL or a /path" }),
+      alt: text(300).allow("").required(),
+      aspect: Joi.string().valid(...CUSTOM_IMAGE_ASPECTS).optional(),
+    }),
+    Joi.object({ type: customType("icon"), name: Joi.string().valid(...ICON_NAMES).required() }),
+    Joi.object({
+      type: customType("list"),
+      items: Joi.array().items(text(200).required()).min(1).max(CUSTOM_LIMITS.maxListItems).required(),
+    }),
+  )
+  .id("customBlock");
+
+export const customDataSchema = Joi.object({
+  width: Joi.string().valid("contained", "wide").optional(),
+  align: Joi.string().valid("start", "center").optional(),
+  blocks: Joi.array().items(customBlockSchema).min(1).max(CUSTOM_LIMITS.maxChildren).required(),
+})
+  .custom((value: { blocks: CustomBlock[] }, helpers) => {
+    const { depth, count } = measureCustomBlocks(value.blocks);
+    if (depth > CUSTOM_LIMITS.maxDepth) return helpers.message({ custom: `Custom layouts can nest at most ${CUSTOM_LIMITS.maxDepth} levels` });
+    if (count > CUSTOM_LIMITS.maxBlocks) return helpers.message({ custom: `Custom layouts can have at most ${CUSTOM_LIMITS.maxBlocks} blocks` });
+    return value;
+  });
 const columns = Joi.number().valid(1, 2, 3, 4);
 
 export const themeSchema = Joi.object({
@@ -627,6 +719,7 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     gradientFades: Joi.boolean().optional(),
     fontSize: Joi.string().valid("small", "medium", "large", "huge").optional(),
   }),
+  custom: customDataSchema,
 };
 
 export const sectionSchema = Joi.object({
