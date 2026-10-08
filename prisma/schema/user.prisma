@@ -21,6 +21,7 @@ model User {
   mediaUploaded        MediaFile[]      @relation("MediaUploadedBy")
   savedSectionsCreated SavedSection[]   @relation("SavedSectionCreatedBy")
   templatesCreated     WebsiteTemplate[] @relation("WebsiteTemplateCreatedBy")
+  aiUsageLogs          AiUsageLog[]
 
   @@index([clientId])
   @@index([role, status])

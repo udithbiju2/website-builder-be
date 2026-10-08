@@ -15,6 +15,7 @@ model Client {
   mediaFiles    MediaFile[]
   savedSections SavedSection[]
   templates     WebsiteTemplate[]
+  aiUsageLogs   AiUsageLog[]
 
   @@map("clients")
 }

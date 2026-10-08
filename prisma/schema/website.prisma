@@ -39,6 +39,7 @@ model Website {
   domains      Domain[]
   media        MediaFile[]      @relation("WebsiteMedia")
   mediaFolders MediaFolder[]
+  aiUsageLogs  AiUsageLog[]
 
   /// Target for (websiteId, clientId) foreign keys, which guarantee child rows
   /// can never point at a website owned by a different client.
