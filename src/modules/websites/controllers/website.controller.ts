@@ -3,6 +3,7 @@ import { AppError } from "../../../common/errors/AppError.js";
 import { logger } from "../../../config/logger.js";
 import type { LayoutSlot } from "../ai/ai-ops.js";
 import { aiGeneratorService, type AiSuggestionPayload } from "../services/ai-generator.service.js";
+import { aiChatService } from "../services/ai-chat.service.js";
 import { websiteService } from "../services/website.service.js";
 import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types.js";
 
@@ -218,6 +219,41 @@ export class WebsiteController {
         });
         res.end();
       }
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  listAiSessions = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json({ sessions: await aiChatService.listSessions(req.params.id, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  saveAiSession = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      const session = await aiChatService.saveSession(req.params.id, req.body, req.user!);
+      res.json({ session });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  deleteAiSession = async (req: Request<{ id: string; sessionId: string }>, res: Response, next: NextFunction) => {
+    try {
+      await aiChatService.deleteSession(req.params.id, req.params.sessionId, req.user!);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  clearAiSessions = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      await aiChatService.clearSessions(req.params.id, req.user!);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

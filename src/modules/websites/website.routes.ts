@@ -86,4 +86,9 @@ websitesRouter.post(
   websiteController.generateAiSuggestion,
 );
 
+websitesRouter.get("/:id/ai/sessions", byId, websiteController.listAiSessions);
+websitesRouter.post("/:id/ai/sessions", byId, websiteController.saveAiSession);
+websitesRouter.delete("/:id/ai/sessions/:sessionId", byId, websiteController.deleteAiSession);
+websitesRouter.delete("/:id/ai/sessions", byId, websiteController.clearAiSessions);
+
 export default websitesRouter;
