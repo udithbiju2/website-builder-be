@@ -32,6 +32,8 @@ export type AiSuggestionPayload = {
     | { scope: "page"; rebuild: boolean; focusSectionId?: string };
   before: SectionEnvelope[];
   after: SectionEnvelope[];
+  /** Proposed SEO for the current page; applied together with the section changes. */
+  seo?: { pageId: string; seoTitle: string; seoDescription: string };
 };
 
 export type ChatHistoryMessage = {
@@ -46,6 +48,8 @@ export type GenerateAiOptions = {
   currentSection?: SectionEnvelope;
   currentSections?: SectionEnvelope[];
   history?: ChatHistoryMessage[];
+  /** Page open in the editor. */
+  pageId?: string;
   clientId?: string;
   websiteId?: string;
   userId?: string;

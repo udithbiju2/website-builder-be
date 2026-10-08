@@ -7,6 +7,7 @@ import { connectRedis, redis } from "./config/redis.js";
 import { seedDesignLibrary } from "./seeder/seed-design-library.js";
 import { seedSuperAdmin } from "./seeder/seed-super-admin.js";
 import { ensureAiUsageTable } from "./modules/admin-ai-usage/services/ai-usage.service.js";
+import { generationWorker } from "./modules/websites/services/website-generation.service.js";
 
 async function bootstrap() {
   await prisma.$connect();
@@ -20,9 +21,11 @@ async function bootstrap() {
   server.listen(env.PORT, "0.0.0.0", () => {
     logger.info({ port: env.PORT }, "API listening");
   });
+  generationWorker.start();
 
   const shutdown = (signal: NodeJS.Signals) => {
     logger.info({ signal }, "Shutting down");
+    generationWorker.stop();
     server.close(() => {
       void Promise.allSettled([prisma.$disconnect(), redis.quit()]).finally(() => process.exit(0));
     });

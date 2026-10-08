@@ -1,5 +1,7 @@
 import type { BuilderType, PageType, WebsiteStatus } from "../../../common/constants/website.js";
+import type { GenerationStatus } from "../../../generated/prisma/enums.js";
 import type { FooterData, HeaderData, Section, ThemeSettings } from "./site-content.types.js";
+import type { GenerationView } from "./website-generation.types.js";
 
 export type WebsiteSummary = {
   id: string;
@@ -10,6 +12,8 @@ export type WebsiteSummary = {
   status: WebsiteStatus;
   subdomain: string;
   pageCount: number;
+  /** Set while (or after) an AI build of this website's draft ran. */
+  generationStatus: GenerationStatus | null;
   hasUnpublishedChanges: boolean;
   publishedAt: string | null;
   createdAt: string;
@@ -47,7 +51,11 @@ export type WebsiteDraft = {
   draftUpdatedAt: string;
 };
 
-export type WebsiteDetail = WebsiteSummary & { info: WebsiteInfo; draft: WebsiteDraft };
+export type WebsiteDetail = WebsiteSummary & {
+  info: WebsiteInfo;
+  draft: WebsiteDraft;
+  generation: GenerationView | null;
+};
 
 export type WebsiteListQuery = {
   search?: string;
