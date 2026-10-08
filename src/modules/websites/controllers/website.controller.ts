@@ -1,5 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
-import { aiGeneratorService } from "../services/ai-generator.service.js";
+import { BuilderType } from "../../../common/constants/website.js";
+import { aiGeneratorService, type GenerateAiOptions } from "../services/ai-generator.service.js";
+import { aiSiteCopilotService } from "../services/ai-site-copilot.service.js";
+import { isGeneratedSectionType } from "../services/site-generator.js";
+import { websiteGenerationService } from "../services/website-generation.service.js";
 import { websiteService } from "../services/website.service.js";
 import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types.js";
 
@@ -99,6 +103,39 @@ export class WebsiteController {
     }
   };
 
+  createWithAi = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.status(201).json({ website: await websiteGenerationService.createWithAi(req.body, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  generationStatus = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json({ generation: await websiteGenerationService.status(req.params.id, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  retryGeneration = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json({ generation: await websiteGenerationService.retry(req.params.id, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  dismissGeneration = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      await websiteGenerationService.dismiss(req.params.id, req.user!);
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  };
+
   update = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
     try {
       res.json({ website: await websiteService.update(req.params.id, req.body, req.user!) });
@@ -152,6 +189,13 @@ export class WebsiteController {
     try {
       // Ensure user has access to this website
       const website = await websiteService.get(req.params.id, req.user!);
+      const body = req.body as GenerateAiOptions;
+      const selectedType = body.scope === "section" ? body.currentSection?.type : undefined;
+      if (website.builderType === BuilderType.AI && (selectedType === undefined || isGeneratedSectionType(selectedType))) {
+        const suggestion = await aiSiteCopilotService.generate({ ...body, website, userId: req.user?.id ?? null });
+        res.json({ suggestion });
+        return;
+      }
       const suggestion = await aiGeneratorService.generate({
         ...req.body,
         clientId: website.clientId,

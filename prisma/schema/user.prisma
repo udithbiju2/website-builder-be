@@ -22,6 +22,7 @@ model User {
   savedSectionsCreated SavedSection[]   @relation("SavedSectionCreatedBy")
   templatesCreated     WebsiteTemplate[] @relation("WebsiteTemplateCreatedBy")
   aiUsageLogs          AiUsageLog[]
+  generationsRequested WebsiteGeneration[] @relation("WebsiteGenerationRequestedBy")
 
   @@index([clientId])
   @@index([role, status])
