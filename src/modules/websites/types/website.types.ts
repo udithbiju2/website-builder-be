@@ -165,3 +165,14 @@ export type WebsiteTemplateSummary = {
   themeId: string | null;
   pages: { name: string; slug: string }[];
 };
+
+/** Read-only render of a platform template, shaped like a website draft so the site-kit can draw it. */
+export type TemplatePreview = {
+  template: WebsiteTemplateSummary;
+  site: {
+    theme: ThemeSettings;
+    header: HeaderData;
+    footer: FooterData;
+    pages: { id: string; name: string; slug: string; sections: Section[] }[];
+  };
+};

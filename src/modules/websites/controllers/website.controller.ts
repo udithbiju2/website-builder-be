@@ -9,6 +9,7 @@ import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types
 
 type IdParams = { id: string };
 type TemplateParams = { templateId: string };
+type TemplateKeyParams = { key: string };
 type SavedSectionParams = { id: string; savedSectionId: string };
 type PageParams = { id: string; pageId: string };
 
@@ -23,6 +24,22 @@ export class WebsiteController {
   listTemplates = async (req: Request, res: Response, next: NextFunction) => {
     try {
       res.json({ templates: await websiteService.listTemplates(req.query as TemplateListQuery, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  listPlatformTemplates = async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json({ templates: await websiteService.listPlatformTemplates() });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getTemplatePreview = async (req: Request<TemplateKeyParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json(await websiteService.getTemplatePreview(req.params.key));
     } catch (error) {
       next(error);
     }

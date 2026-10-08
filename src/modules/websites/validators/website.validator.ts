@@ -31,6 +31,14 @@ export const templateIdParamsSchema = Joi.object({
   templateId: Joi.string().guid().required(),
 });
 
+export const templateKeyParamsSchema = Joi.object({
+  key: Joi.string()
+    .trim()
+    .max(80)
+    .pattern(/^[a-z0-9-]+$/)
+    .required(),
+});
+
 export const savedSectionParamsSchema = Joi.object({
   id: Joi.string().guid().required(),
   savedSectionId: Joi.string().guid().required(),
