@@ -1,5 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
-import { aiGeneratorService } from "../services/ai-generator.service.js";
+import { AppError } from "../../../common/errors/AppError.js";
+import { logger } from "../../../config/logger.js";
+import type { LayoutSlot } from "../ai/ai-ops.js";
+import { aiGeneratorService, type AiSuggestionPayload } from "../services/ai-generator.service.js";
 import { websiteService } from "../services/website.service.js";
 import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types.js";
 
@@ -7,6 +10,13 @@ type IdParams = { id: string };
 type TemplateParams = { templateId: string };
 type SavedSectionParams = { id: string; savedSectionId: string };
 type PageParams = { id: string; pageId: string };
+
+const NDJSON = "application/x-ndjson";
+
+type AiStreamEvent =
+  | { type: "plan"; layout: LayoutSlot[] }
+  | { type: "result"; suggestion: AiSuggestionPayload }
+  | { type: "error"; error: { code: string; message: string } };
 
 export class WebsiteController {
   listTemplates = async (req: Request, res: Response, next: NextFunction) => {
@@ -152,13 +162,39 @@ export class WebsiteController {
     try {
       // Ensure user has access to this website
       const website = await websiteService.get(req.params.id, req.user!);
-      const suggestion = await aiGeneratorService.generate({
-        ...req.body,
-        clientId: website.clientId,
-        websiteId: website.id,
-        userId: req.user?.id,
-      });
-      res.json({ suggestion });
+      const options = { ...req.body, clientId: website.clientId, websiteId: website.id, userId: req.user?.id };
+
+      if (!req.get("accept")?.includes(NDJSON)) {
+        res.json({ suggestion: await aiGeneratorService.generate(options) });
+        return;
+      }
+
+      // NDJSON stream: a `plan` event (section positions) first, then the `result`.
+      const send = (event: AiStreamEvent) => {
+        if (!res.headersSent) {
+          res.status(200).type(NDJSON).set({ "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
+        }
+        res.write(`${JSON.stringify(event)}\n`);
+      };
+
+      try {
+        const suggestion = await aiGeneratorService.generate(options, (layout) => send({ type: "plan", layout }));
+        send({ type: "result", suggestion });
+        res.end();
+      } catch (error) {
+        if (!res.headersSent) throw error;
+        // Headers are already sent, so the error travels as the final event instead of an HTTP status.
+        const appError = error instanceof AppError ? error : null;
+        if (!appError || appError.statusCode >= 500) logger.error({ err: error }, "AI generation failed mid-stream");
+        send({
+          type: "error",
+          error: {
+            code: appError?.code ?? "INTERNAL_ERROR",
+            message: appError?.message ?? "Internal server error",
+          },
+        });
+        res.end();
+      }
     } catch (error) {
       next(error);
     }
