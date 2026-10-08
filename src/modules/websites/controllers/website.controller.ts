@@ -4,6 +4,7 @@ import { AppError } from "../../../common/errors/AppError.js";
 import { logger } from "../../../config/logger.js";
 import type { LayoutSlot } from "../ai/ai-ops.js";
 import { aiGeneratorService, type AiSuggestionPayload, type GenerateAiOptions } from "../services/ai-generator.service.js";
+import { aiChatService } from "../services/ai-chat.service.js";
 import { aiSiteCopilotService } from "../services/ai-site-copilot.service.js";
 import { isGeneratedSectionType } from "../services/site-generator.js";
 import { websiteGenerationService } from "../services/website-generation.service.js";
@@ -12,6 +13,7 @@ import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types
 
 type IdParams = { id: string };
 type TemplateParams = { templateId: string };
+type TemplateKeyParams = { key: string };
 type SavedSectionParams = { id: string; savedSectionId: string };
 type PageParams = { id: string; pageId: string };
 
@@ -26,6 +28,22 @@ export class WebsiteController {
   listTemplates = async (req: Request, res: Response, next: NextFunction) => {
     try {
       res.json({ templates: await websiteService.listTemplates(req.query as TemplateListQuery, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  listPlatformTemplates = async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json({ templates: await websiteService.listPlatformTemplates() });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getTemplatePreview = async (req: Request<TemplateKeyParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json(await websiteService.getTemplatePreview(req.params.key));
     } catch (error) {
       next(error);
     }
@@ -199,6 +217,15 @@ export class WebsiteController {
     try {
       // Ensure user has access to this website
       const website = await websiteService.get(req.params.id, req.user!);
+      const abortController = new AbortController();
+
+      // `res` (not `req`) "close" means the client disconnected; `req` closes once the body is read.
+      res.on("close", () => {
+        if (!res.writableEnded) {
+          abortController.abort();
+        }
+      });
+
       const body = req.body as GenerateAiOptions;
       const selectedType = body.scope === "section" ? body.currentSection?.type : undefined;
       const useCopilot =
@@ -206,9 +233,20 @@ export class WebsiteController {
 
       const generate = (onPlan?: (layout: LayoutSlot[]) => void): Promise<AiSuggestionPayload> =>
         useCopilot
-          ? aiSiteCopilotService.generate({ ...body, website, userId: req.user?.id ?? null })
+          ? aiSiteCopilotService.generate({
+              ...body,
+              website,
+              userId: req.user?.id ?? null,
+              signal: abortController.signal,
+            })
           : aiGeneratorService.generate(
-              { ...req.body, clientId: website.clientId, websiteId: website.id, userId: req.user?.id },
+              {
+                ...body,
+                clientId: website.clientId,
+                websiteId: website.id,
+                userId: req.user?.id,
+                signal: abortController.signal,
+              },
               onPlan,
             );
 
@@ -230,6 +268,15 @@ export class WebsiteController {
         send({ type: "result", suggestion });
         res.end();
       } catch (error) {
+        if (abortController.signal.aborted) {
+          if (!res.headersSent) {
+            res.status(499).json({ error: { code: "CANCELLED", message: "AI generation cancelled." } });
+          } else {
+            res.end();
+          }
+          return;
+        }
+
         if (!res.headersSent) throw error;
         // Headers are already sent, so the error travels as the final event instead of an HTTP status.
         const appError = error instanceof AppError ? error : null;
@@ -243,6 +290,41 @@ export class WebsiteController {
         });
         res.end();
       }
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  listAiSessions = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      res.json({ sessions: await aiChatService.listSessions(req.params.id, req.user!) });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  saveAiSession = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      const session = await aiChatService.saveSession(req.params.id, req.body, req.user!);
+      res.json({ session });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  deleteAiSession = async (req: Request<{ id: string; sessionId: string }>, res: Response, next: NextFunction) => {
+    try {
+      await aiChatService.deleteSession(req.params.id, req.params.sessionId, req.user!);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  clearAiSessions = async (req: Request<IdParams>, res: Response, next: NextFunction) => {
+    try {
+      await aiChatService.clearSessions(req.params.id, req.user!);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

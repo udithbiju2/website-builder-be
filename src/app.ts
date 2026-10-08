@@ -12,6 +12,7 @@ import aiSettingsRouter from "./modules/admin-settings/ai-settings.routes.js";
 import aiUsageRouter from "./modules/admin-ai-usage/ai-usage.routes.js";
 import healthRouter from "./modules/health/health.routes.js";
 import mediaRouter from "./modules/media/media.routes.js";
+import publicTemplatesRouter from "./modules/websites/public-template.routes.js";
 import websitesRouter from "./modules/websites/website.routes.js";
 
 const app = express();
@@ -50,6 +51,7 @@ app.use("/api/admin/settings/email", emailSettingsRouter);
 app.use("/api/admin/settings/ai", aiSettingsRouter);
 app.use("/api/admin/clients", clientsRouter);
 app.use("/api/admin/ai-usage", aiUsageRouter);
+app.use("/api/templates", publicTemplatesRouter);
 app.use("/api/websites", websitesRouter);
 app.use("/api/media", mediaRouter);
 
