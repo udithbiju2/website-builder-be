@@ -1,18 +1,25 @@
-import { env } from "../../../config/env.js";
 import { prisma } from "../../../config/prisma.js";
 import { logger } from "../../../config/logger.js";
 import { AppError } from "../../../common/errors/AppError.js";
 import crypto from "crypto";
+import {
+  AI_PLAN_RESPONSE_FORMAT,
+  applyOps,
+  parsePlan,
+  previewLayout,
+  type CanvasOp,
+  type LayoutSlot,
+  type PlannedOp,
+  type SectionEnvelope,
+} from "../ai/ai-ops.js";
+import { PLANNER_SYSTEM_PROMPT, buildPlannerInput } from "../ai/ai-planner.js";
+import { sanitizeCustomData } from "../ai/custom-section.js";
+import { CUSTOM_LIMITS, ICON_NAMES } from "../types/site-content.types.js";
+import { aiSettingsService } from "../../admin-settings/services/ai-settings.service.js";
+
+export type { SectionEnvelope };
 
 export type AiGenerateScope = "section" | "page";
-
-export type SectionEnvelope = {
-  id: string;
-  type: string;
-  hidden: boolean;
-  settings: Record<string, unknown>;
-  data: Record<string, unknown>;
-};
 
 export type AiSuggestionPayload = {
   id: string;
@@ -22,8 +29,8 @@ export type AiSuggestionPayload = {
   target:
     | { scope: "chat" }
     | { scope: "section"; sectionId: string }
-    | { scope: "section_add"; sectionType: string }
-    | { scope: "page" };
+    /** `rebuild` marks a whole-page rewrite; `focusSectionId` is the section to scroll to. */
+    | { scope: "page"; rebuild: boolean; focusSectionId?: string };
   before: SectionEnvelope[];
   after: SectionEnvelope[];
 };
@@ -132,6 +139,7 @@ export function sanitizeSectionSettings(rawSettings: Record<string, unknown> = {
 }
 
 export function sanitizeSectionData(type: string, rawData: Record<string, unknown> = {}): Record<string, unknown> {
+  if (type === "custom") return sanitizeCustomData(rawData);
   const data = { ...rawData };
 
   // Normalize common top-level synonyms
@@ -361,6 +369,18 @@ export function sanitizeSectionData(type: string, rawData: Record<string, unknow
       break;
     }
 
+    case "carousel": {
+      const validCarouselVariants = ["cards", "hero-slider", "showcase", "minimal-editorial", "image-gallery", "image-strip", "image-coverflow"];
+      if (typeof data.variant !== "string" || !validCarouselVariants.includes(data.variant)) {
+        data.variant = "cards";
+      }
+      if (typeof data.autoplay === "boolean" && data.autoPlay === undefined) {
+        data.autoPlay = data.autoplay;
+      }
+      delete data.autoplay;
+      break;
+    }
+
     case "faq": {
       const validFaqVariants = ["accordion-classic", "two-column-grid", "split-sidebar", "minimal-numbered", "categorized-cards"];
       if (typeof data.variant !== "string" || !validFaqVariants.includes(data.variant)) {
@@ -497,7 +517,12 @@ VALID SECTION SCHEMAS & EXACT FIELD KEYS:
 8. "marquee":
    data: { "variant": "gradient-pill", "speed": "normal", "direction": "left", "items": [ { "text": "...", "badge": "..." } ] }
 9. "carousel":
-   data: { "variant": "hero-slider", "autoplay": true, "slides": [ { "title": "...", "subtitle": "...", "description": "..." } ] }
+   data: {
+     "variant": "hero-slider"|"cards"|"showcase"|"minimal-editorial"|"image-gallery"|"image-strip"|"image-coverflow",
+     "heading": "...", "intro": "...", "autoPlay": true, "interval": 5,
+     "slides": [ { "title": "...", "subtitle": "...", "description": "...", "badge": "...", "image": { "url": "https://images.unsplash.com/...", "alt": "..." }, "button": { "label": "Get started", "href": "/contact" } } ]
+   }
+   "hero-slider" is a full-width hero banner slider: give every slide a large background image, a punchy title, a description and a button.
 10. "faq":
    data: { "variant": "accordion-classic"|"two-column-grid"|"split-sidebar"|"minimal-numbered"|"categorized-cards", "heading": "...", "intro": "...", "items": [ { "question": "...", "answer": "..." } ] }
 11. "cta":
@@ -505,6 +530,21 @@ VALID SECTION SCHEMAS & EXACT FIELD KEYS:
 12. "header":
    data: { "design": "logo-left"|"centered"|"classical"|"minimalist"|"floating", "siteName": "...", "menu": [ { "label": "Home", "href": "/" }, { "label": "About", "href": "/about" } ], "sticky": false }
    settings: { "customColors": { "background": "#rrggbb" } }
+13. "custom" (free-form layout composed from blocks; use it for designs no standard section can express):
+   data: { "width": "contained"|"wide", "align": "start"|"center", "blocks": [Block, ...] }
+   Block is exactly one of:
+   { "type": "stack", "direction": "column"|"row", "gap": "sm"|"md"|"lg", "align": "start"|"center"|"end", "children": [Block] }
+   { "type": "grid", "columns": 1|2|3|4, "gap": "sm"|"md"|"lg", "align": "start"|"center", "children": [Block] }
+   { "type": "card", "tone": "default"|"muted"|"primary"|"glass", "children": [Block] }
+   { "type": "heading", "text": "...", "level": 1|2|3 }
+   { "type": "text", "text": "...", "size": "sm"|"md"|"lg", "muted": true|false }
+   { "type": "badge", "text": "..." }
+   { "type": "button", "label": "...", "href": "/contact", "tone": "primary"|"secondary" }
+   { "type": "image", "url": "https://images.unsplash.com/...", "alt": "...", "aspect": "auto"|"square"|"video"|"portrait" }
+   { "type": "icon", "name": ${ICON_NAMES.map((n) => `"${n}"`).join("|")} }
+   { "type": "list", "items": ["..."] }
+   Limits: at most ${CUSTOM_LIMITS.maxDepth} nesting levels, ${CUSTOM_LIMITS.maxBlocks} blocks in total and ${CUSTOM_LIMITS.maxChildren} children per container.
+   Use "grid" for side-by-side columns (it collapses to one column on mobile), "stack" with direction "row" for button groups, and "card" for boxed content.
 
 STOCK / DUMMY IMAGE GUIDELINES:
 - Tech / Dark Hero: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=2000&q=80"
@@ -523,7 +563,7 @@ ${SECTION_SCHEMAS_GUIDE}
 3. Output format must be:
 {
   "summary": "Brief 1-sentence summary of the new section created",
-  "type": "header"|"footer"|"hero"|"features"|"services"|"pricing"|"testimonials"|"faq"|"cta"|"team"|"marquee"|"carousel"|"stats",
+  "type": "<the requested section type>",
   "settings": { "background": "default", "hideOnMobile": false, "spacing": "default" },
   "data": { ... }
 }`;
@@ -553,127 +593,73 @@ ${SECTION_SCHEMAS_GUIDE}
   }
 }`;
 
-const SYSTEM_PROMPT_PAGE = `You are a world-class AI website designer, conversion copywriter, and assistant for a modern 2026 website builder.
-Your job is to analyze the user prompt and either answer conversationally or generate/redesign page sections.
+const SYSTEM_PROMPT_PAGE = `You are a world-class AI website designer and conversion copywriter for a modern website builder.
+Your job is to generate a complete page as an ordered list of sections, matching exactly the requested section types and order.
 
-MODE A: CONVERSATIONAL / QUESTION / GREETINGS / ADVICE / FEEDBACK (e.g. "hi", "hello", "what can you do?", "how do I change colors?", "is my hero section good?", "give me tips for a bakery site"):
-Output JSON:
+CRITICAL RULES:
+1. Always output ONLY valid JSON without Markdown code fences.
+2. Provide rich, realistic, high-converting copy. Never use placeholder text.
+3. Keep the brand name, tone and visual style consistent across all sections.
+${SECTION_SCHEMAS_GUIDE}
+4. Output format must be:
 {
-  "intent": "chat",
-  "summary": "AI Copilot Response",
-  "chatReply": "Direct, helpful, friendly answer addressing the user's question or greeting without modifying their canvas."
-}
-
-MODE B: PAGE CREATION / FULL PAGE REDESIGN / OVERHAUL (e.g. "Build an AI SaaS landing page", "Redesign page in dark luxury style", "Create a gym website with pricing"):
-Output JSON:
-{
-  "intent": "page",
   "summary": "Brief 1-sentence summary of the page generated",
   "sections": [
     {
-      "type": "hero"|"features"|"services"|"pricing"|"testimonials"|"faq"|"cta"|"team"|"marquee"|"carousel"|"stats",
+      "type": "<requested section type>",
       "settings": { "background": "default"|"surface"|"primary"|"dark", "hideOnMobile": false, "spacing": "default"|"relaxed" },
       "data": { ... }
     }
   ]
-}
+}`;
 
-CRITICAL RULES:
-1. Always output ONLY valid JSON without Markdown code fences.
-2. If the user is asking a question, greeting, or inquiring without explicitly asking to build/create/redesign/generate sections, set "intent": "chat" and provide a helpful "chatReply". DO NOT generate random sections.
-3. For page generation, output 4 to 6 rich, high-converting sections (excluding header and footer).
-${SECTION_SCHEMAS_GUIDE}`;
+type OpenAiMessage = { role: "system" | "user" | "assistant"; content: string };
 
-const SECTION_KEYWORDS: Record<string, string> = {
-  header: "header",
-  haeder: "header",
-  haedrr: "header",
-  haedr: "header",
-  headrr: "header",
-  headr: "header",
-  hedar: "header",
-  heder: "header",
-  headdr: "header",
-  heddr: "header",
-  hadder: "header",
-  haedd: "header",
-  navbar: "header",
-  navba: "header",
-  navbr: "header",
-  nav: "header",
-  menu: "header",
-  footer: "footer",
-  footr: "footer",
-  foter: "footer",
-  fotter: "footer",
-  footerr: "footer",
-  foot: "footer",
-  copyright: "footer",
-  hero: "hero",
-  banner: "hero",
-  headline: "hero",
-  herosection: "hero",
-  feature: "features",
-  features: "features",
-  faeture: "features",
-  faetures: "features",
-  feautre: "features",
-  feautres: "features",
-  feture: "features",
-  fetures: "features",
-  featurs: "features",
-  service: "services",
-  services: "services",
-  servce: "services",
-  servces: "services",
-  servise: "services",
-  servises: "services",
-  pricing: "pricing",
-  price: "pricing",
-  prices: "pricing",
-  plan: "pricing",
-  plans: "pricing",
-  pricng: "pricing",
-  testimonial: "testimonials",
-  testimonials: "testimonials",
-  testimonal: "testimonials",
-  testimonals: "testimonials",
-  review: "testimonials",
-  reviews: "testimonials",
-  faq: "faq",
-  faqs: "faq",
-  question: "faq",
-  questions: "faq",
-  team: "team",
-  members: "team",
-  aboutus: "team",
-  marquee: "marquee",
-  ticker: "marquee",
-  carousel: "carousel",
-  slider: "carousel",
-  slide: "carousel",
-  slides: "carousel",
-  cta: "cta",
-  action: "cta",
-  calltoaction: "cta",
-  contact: "contact",
-  form: "contact",
-  stat: "stats",
-  stats: "stats",
-  numbers: "stats",
+type LoggingContext = { clientId?: string; websiteId?: string; userId?: string };
+
+type OpenAiCallOptions = {
+  scope: string;
+  logging: LoggingContext;
+  temperature?: number;
+  maxTokens?: number;
+  responseFormat?: Record<string, unknown>;
 };
 
-import { aiSettingsService } from "../../admin-settings/services/ai-settings.service.js";
+const PLANNER_HISTORY_TURNS = 6;
+const FALLBACK_CLARIFY_REPLY = "I couldn't match that to a section on this page. Which section do you mean?";
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> {
+  try {
+    return asRecord(JSON.parse(raw));
+  } catch {
+    throw new AppError(502, "Failed to parse structured JSON response from AI.");
+  }
+}
+
+function buildSection(type: string, raw: Record<string, unknown>, id: string = crypto.randomUUID()): SectionEnvelope {
+  return {
+    id,
+    type,
+    hidden: false,
+    settings: sanitizeSectionSettings(asRecord(raw.settings)),
+    data: sanitizeSectionData(type, asRecord(raw.data)),
+  };
+}
+
+function focusSectionId(ops: readonly CanvasOp[]): string | undefined {
+  for (const op of ops) {
+    if (op.op === "add" || op.op === "update") return op.section.id;
+  }
+  return undefined;
+}
 
 export class AiGeneratorService {
-  /**
-   * Calls OpenAI Chat Completions API using native fetch.
-   */
-  private async callOpenAi(
-    messages: { role: "system" | "user" | "assistant"; content: string }[],
-    temperature = 0.7,
-    loggingContext?: { clientId?: string; websiteId?: string; userId?: string; scope?: string },
-  ): Promise<string> {
+  private async callOpenAi(messages: OpenAiMessage[], options: OpenAiCallOptions): Promise<string> {
+    const { scope, logging, temperature = 0.7, maxTokens = 3000, responseFormat = { type: "json_object" } } = options;
     const { apiKey, model } = await aiSettingsService.getCredentials();
     if (!apiKey) {
       throw new AppError(
@@ -682,15 +668,14 @@ export class AiGeneratorService {
       );
     }
 
-    // OpenAI response_format json_object requires the string 'json' somewhere in the prompt/messages
-    const hasJsonWord = messages.some((m) => m.content.toLowerCase().includes("json"));
-    const safeMessages = hasJsonWord
-      ? messages
-      : messages.map((m, idx) =>
-          idx === 0
-            ? { ...m, content: `${m.content}\n\nIMPORTANT: Respond strictly in valid JSON format.` }
-            : m,
-        );
+    // OpenAI json_object mode requires the word "json" somewhere in the messages.
+    const needsJsonHint =
+      responseFormat.type === "json_object" && !messages.some((m) => m.content.toLowerCase().includes("json"));
+    const safeMessages = needsJsonHint
+      ? messages.map((m, idx) =>
+          idx === 0 ? { ...m, content: `${m.content}\n\nIMPORTANT: Respond strictly in valid JSON format.` } : m,
+        )
+      : messages;
 
     const startMs = Date.now();
     const effectiveModel = model || "gpt-4o-mini";
@@ -705,8 +690,8 @@ export class AiGeneratorService {
         model: effectiveModel,
         messages: safeMessages,
         temperature,
-        response_format: { type: "json_object" },
-        max_tokens: 3000,
+        response_format: responseFormat,
+        max_tokens: maxTokens,
       }),
     });
 
@@ -725,13 +710,13 @@ export class AiGeneratorService {
       if (response.status === 401) {
         throw new AppError(
           401,
-          `Invalid OpenAI API Key (${errorMsg}). Please paste your valid OpenAI API key in Super Admin > Settings > AI Settings.`
+          `Invalid OpenAI API Key (${errorMsg}). Please paste your valid OpenAI API key in Super Admin > Settings > AI Settings.`,
         );
       }
       if (response.status === 429) {
         throw new AppError(
           429,
-          `OpenAI Rate Limit or Quota Exceeded (${errorMsg}). Please check your OpenAI account credits or update your key in Super Admin > Settings > AI Settings.`
+          `OpenAI Rate Limit or Quota Exceeded (${errorMsg}). Please check your OpenAI account credits or update your key in Super Admin > Settings > AI Settings.`,
         );
       }
 
@@ -740,7 +725,7 @@ export class AiGeneratorService {
 
     const json = (await response.json()) as {
       model?: string;
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string | null } }>;
       usage?: {
         prompt_tokens?: number;
         completion_tokens?: number;
@@ -753,24 +738,23 @@ export class AiGeneratorService {
       throw new AppError(502, "OpenAI returned an empty response");
     }
 
-    if (loggingContext?.clientId) {
-      const durationMs = Date.now() - startMs;
+    if (logging.clientId) {
       prisma.aiUsageLog
         .create({
           data: {
-            clientId: loggingContext.clientId,
-            websiteId: loggingContext.websiteId || null,
-            userId: loggingContext.userId || null,
+            clientId: logging.clientId,
+            websiteId: logging.websiteId || null,
+            userId: logging.userId || null,
             model: json.model || effectiveModel,
-            scope: loggingContext.scope || "section",
+            scope,
             promptTokens: json.usage?.prompt_tokens ?? 0,
             completionTokens: json.usage?.completion_tokens ?? 0,
             totalTokens: json.usage?.total_tokens ?? 0,
-            durationMs,
+            durationMs: Date.now() - startMs,
           },
         })
         .catch((err) => {
-          logger.error({ err, clientId: loggingContext.clientId }, "Failed to record AI usage log");
+          logger.error({ err, clientId: logging.clientId }, "Failed to record AI usage log");
         });
     }
 
@@ -778,342 +762,193 @@ export class AiGeneratorService {
   }
 
   /**
-   * Generates AI suggestion for a single section, adding a section, or full page.
+   * Understands the prompt via a structured-output planner, generates content only for the
+   * ops that need it (in parallel), then applies all ops deterministically to the canvas.
+   * `onPlan` receives the planned layout before content generation, so the editor can show placeholders.
    */
-  async generate(options: GenerateAiOptions): Promise<AiSuggestionPayload> {
-    const {
-      prompt,
-      scope,
-      sectionId,
-      currentSection,
-      currentSections = [],
-      history = [],
-      clientId,
-      websiteId,
-      userId,
-    } = options;
-    const loggingContext = { clientId, websiteId, userId, scope };
-    const lowerPrompt = prompt.toLowerCase().trim();
+  async generate(options: GenerateAiOptions, onPlan?: (layout: LayoutSlot[]) => void): Promise<AiSuggestionPayload> {
+    const { prompt, sectionId, currentSection, currentSections = [], history = [], clientId, websiteId, userId } =
+      options;
+    const logging: LoggingContext = { clientId, websiteId, userId };
 
-    // Fast handling for common greetings
-    const GREETING_REGEX = /^(hi|hello|hey|greetings|hola|good\s+(morning|afternoon|evening)|sup|yo|test|howdy)[\s!.]*$/i;
-    const HELP_QUESTION_REGEX = /^(who\s+are\s+you|what\s+can\s+you\s+do|how\s+(does\s+this\s+work|to\s+use|can\s+i\s+use|do\s+i)|help me|help)[\s?!.]*$/i;
+    const plan = await this.plan(prompt, currentSections, currentSection?.id ?? sectionId, history, logging);
 
-    if (GREETING_REGEX.test(lowerPrompt)) {
-      return {
-        id: crypto.randomUUID(),
-        prompt,
-        summary: "Hello! I am your AI Website Copilot.",
-        chatReply: "Hello! I am your AI Website Copilot.\n\nHere are some things you can ask me to do:\n• Generate a full landing page (e.g. 'Build an AI SaaS landing page')\n• Add a new section (e.g. 'Add a 3-tier pricing table')\n• Click any section on the canvas to customize its copy, style, or background.",
-        target: { scope: "chat" },
-        before: [],
-        after: [],
-      };
+    if (plan.intent !== "edit" || plan.ops.length === 0) {
+      const reply = plan.intent === "edit" || !plan.reply ? FALLBACK_CLARIFY_REPLY : plan.reply;
+      return { id: crypto.randomUUID(), prompt, summary: reply, chatReply: reply, target: { scope: "chat" }, before: [], after: [] };
     }
 
-    if (HELP_QUESTION_REGEX.test(lowerPrompt)) {
-      return {
-        id: crypto.randomUUID(),
-        prompt,
-        summary: "AI Website Copilot Guide",
-        chatReply: "I can help you build and refine your website:\n\n1. Whole Page Mode: Ask to build a full page (e.g. 'Modern AI SaaS', 'Luxury Agency', 'Bakery Shop').\n2. Section Editing: Click on any section on the canvas to edit its copy, colors, or images.\n3. Add Sections: Ask to 'Add FAQ section' or 'Insert team members'.\n4. Live Previews: Every generation includes a visual live preview with Accept / Reject controls.",
-        target: { scope: "chat" },
-        before: [],
-        after: [],
-      };
-    }
+    const addIds = plan.ops.map((op) => (op.op === "add" ? crypto.randomUUID() : undefined));
+    onPlan?.(previewLayout(currentSections, plan.ops, addIds));
 
-    // Helper to build OpenAI message chain with up to 10 previous conversation turns
-    const buildMessages = (systemPrompt: string, userPromptText: string) => {
-      const msgs: { role: "system" | "user" | "assistant"; content: string }[] = [
-        { role: "system", content: systemPrompt },
-      ];
-
-      if (Array.isArray(history) && history.length > 0) {
-        const recentHistory = history.slice(-10);
-        for (const item of recentHistory) {
-          if (item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string") {
-            msgs.push({
-              role: item.role,
-              content: item.content,
-            });
-          }
-        }
-      }
-
-      msgs.push({ role: "user", content: userPromptText });
-      return msgs;
-    };
-
-    // Check if a specific section type is mentioned in the prompt (with typo tolerance)
-    let requestedSectionType: string | null = null;
-    for (const [kw, stype] of Object.entries(SECTION_KEYWORDS)) {
-      if (lowerPrompt.includes(kw) || new RegExp(`\\b${kw}\\b`, "i").test(lowerPrompt)) {
-        requestedSectionType = stype;
-        break;
-      }
-    }
-
-    const isExplicitAddSectionCommand =
-      lowerPrompt.includes("add") ||
-      lowerPrompt.includes("insert") ||
-      lowerPrompt.includes("append") ||
-      lowerPrompt.includes("create") ||
-      lowerPrompt.includes("build") ||
-      lowerPrompt.includes("put") ||
-      lowerPrompt.includes("give") ||
-      lowerPrompt.includes("also") ||
-      lowerPrompt.includes("plus") ||
-      Boolean(
-        requestedSectionType &&
-        !lowerPrompt.includes("full page") &&
-        !lowerPrompt.includes("entire page") &&
-        !lowerPrompt.includes("landing page") &&
-        !lowerPrompt.includes("whole website") &&
-        !lowerPrompt.includes("new website") &&
-        !lowerPrompt.includes("redesign all")
-      );
-
-    // Determine if we should edit an existing section in-place or create a new section
-    const isEditingCurrentSection =
-      scope === "section" &&
-      Boolean(currentSection) &&
-      !isExplicitAddSectionCommand &&
-      (!requestedSectionType || requestedSectionType === currentSection?.type);
-
-    const shouldAddSection =
-      isExplicitAddSectionCommand ||
-      (Boolean(requestedSectionType) && !isEditingCurrentSection && (!currentSection || requestedSectionType !== currentSection?.type));
-
-    if (shouldAddSection && requestedSectionType) {
-      const userMessage = `Requested Section Type to Create: "${requestedSectionType}"
-User Prompt: "${prompt}"
-
-Please create a complete, stunning, high-converting "${requestedSectionType}" section JSON for this instruction.`;
-
-      const rawAiResponse = await this.callOpenAi(
-        buildMessages(SYSTEM_PROMPT_ADD_SECTION, userMessage),
-        0.7,
-        { ...loggingContext, scope: "section_add" },
-      );
-
-      let parsed: any;
-      try {
-        parsed = JSON.parse(rawAiResponse);
-      } catch {
-        throw new AppError(502, "Failed to parse structured JSON response from AI.");
-      }
-
-      const sectionObj = (parsed.section && typeof parsed.section === "object") ? parsed.section : parsed;
-      const finalType = sectionObj.type || parsed.type || requestedSectionType;
-      const rawData = (sectionObj.data && typeof sectionObj.data === "object")
-        ? sectionObj.data
-        : (parsed.data && typeof parsed.data === "object")
-          ? parsed.data
-          : parsed;
-      const rawSettings = (sectionObj.settings && typeof sectionObj.settings === "object")
-        ? sectionObj.settings
-        : (parsed.settings && typeof parsed.settings === "object")
-          ? parsed.settings
-          : {};
-
-      const cleanSettings = sanitizeSectionSettings(rawSettings);
-      const cleanData = sanitizeSectionData(finalType, rawData);
-
-      const newSection: SectionEnvelope = {
-        id: crypto.randomUUID(),
-        type: finalType,
-        hidden: false,
-        settings: cleanSettings,
-        data: cleanData,
-      };
-
-      return {
-        id: crypto.randomUUID(),
-        prompt,
-        summary: parsed.summary || `Added new ${finalType} section`,
-        target: { scope: "section_add", sectionType: finalType },
-        before: [],
-        after: [newSection],
-      };
-    }
-
-    // SCENARIO 2: EDIT EXISTING SECTION IN PLACE
-    if (isEditingCurrentSection) {
-      const targetSection = currentSection!;
-
-      if (targetSection) {
-        const userMessage = `Current Section Type: "${targetSection.type}"
-Current Section Settings: ${JSON.stringify(targetSection.settings || {})}
-Current Section Data: ${JSON.stringify(targetSection.data || {})}
-
-User Instruction: "${prompt}"
-
-Please modify this section data and settings to satisfy the user instruction. If changing color/background, use valid 6-digit hex in settings.customColors.`;
-
-        const rawAiResponse = await this.callOpenAi(
-          buildMessages(SYSTEM_PROMPT_SECTION_EDIT, userMessage),
-          0.7,
-          { ...loggingContext, scope: "section" },
-        );
-
-        let parsed: { summary?: string; chatReply?: string; intent?: string; data?: Record<string, unknown>; settings?: Record<string, unknown> };
-        try {
-          parsed = JSON.parse(rawAiResponse);
-        } catch {
-          throw new AppError(502, "Failed to parse structured JSON response from AI.");
-        }
-
-        if (parsed.intent === "chat" || (parsed.chatReply && !parsed.data)) {
-          return {
-            id: crypto.randomUUID(),
-            prompt,
-            summary: parsed.chatReply || parsed.summary || "AI Copilot Response",
-            chatReply: parsed.chatReply || parsed.summary,
-            target: { scope: "chat" },
-            before: [],
-            after: [],
-          };
-        }
-
-        const updatedData = sanitizeSectionData(targetSection.type, {
-          ...targetSection.data,
-          ...(parsed.data || {}),
-        });
-
-        const rawMergedSettings = {
-          ...targetSection.settings,
-          ...(parsed.settings || {}),
-        };
-
-        const updatedSettings = sanitizeSectionSettings(rawMergedSettings);
-
-        const afterSection: SectionEnvelope = {
-          id: targetSection.id,
-          type: targetSection.type,
-          hidden: targetSection.hidden ?? false,
-          settings: updatedSettings,
-          data: updatedData,
-        };
-
-        return {
-          id: crypto.randomUUID(),
-          prompt,
-          summary: parsed.summary || `Updated ${targetSection.type} section`,
-          target: { scope: "section", sectionId: targetSection.id },
-          before: [targetSection],
-          after: [afterSection],
-        };
-      }
-    }
-
-    // SCENARIO 3: WHOLE PAGE GENERATION OR CONVERSATIONAL QUERY
-    const userMessage = `User Website Goal / Prompt: "${prompt}"
-Current Sections on Page: ${currentSections.map((s) => s.type).join(", ") || "None (Fresh Page)"}
-
-Please analyze the user's intent. If it's conversational / advice / questions, return "intent": "chat" and "chatReply". If it's page generation, output "intent": "page" and "sections".`;
-
-    const rawAiResponse = await this.callOpenAi(
-      buildMessages(SYSTEM_PROMPT_PAGE, userMessage),
-      0.7,
-      { ...loggingContext, scope: "page" },
+    const canvasOps = await Promise.all(
+      plan.ops.map((op, i) => this.materialize(op, currentSections, logging, addIds[i])),
     );
+    const summary = plan.reply || "Updated the page";
 
-    let parsed: {
-      intent?: "chat" | "page";
-      summary?: string;
-      chatReply?: string;
-      sections?: Array<{ type: string; settings?: Record<string, unknown>; data: Record<string, unknown> }>;
-    };
-    try {
-      parsed = JSON.parse(rawAiResponse);
-    } catch {
-      throw new AppError(502, "Failed to parse structured JSON response from AI.");
-    }
-
-    if (parsed.intent === "chat" || (parsed.chatReply && (!parsed.sections || parsed.sections.length === 0))) {
+    const [onlyOp] = canvasOps;
+    if (canvasOps.length === 1 && onlyOp?.op === "update") {
+      const before = currentSections.filter((s) => s.id === onlyOp.section.id);
       return {
         id: crypto.randomUUID(),
         prompt,
-        summary: parsed.chatReply || parsed.summary || "AI Copilot Response",
-        chatReply: parsed.chatReply || parsed.summary,
-        target: { scope: "chat" },
-        before: [],
-        after: [],
+        summary,
+        target: { scope: "section", sectionId: onlyOp.section.id },
+        before,
+        after: [onlyOp.section],
       };
     }
-
-    const generatedList = Array.isArray(parsed.sections) ? parsed.sections : [];
-    if (generatedList.length === 0) {
-      throw new AppError(502, "AI did not generate any page sections. Please try with a more specific prompt.");
-    }
-
-    // Preserve existing header from page, or create default header if none
-    const existingHeader = currentSections.find((s) => s.type === "header");
-    const headerSection: SectionEnvelope = existingHeader
-      ? structuredClone(existingHeader)
-      : {
-          id: crypto.randomUUID(),
-          type: "header",
-          hidden: false,
-          settings: sanitizeSectionSettings({}),
-          data: sanitizeSectionData("header", {
-            design: "logo-left",
-            siteName: "Modulus",
-            menu: [
-              { label: "Solutions", href: "#features" },
-              { label: "About us", href: "#about" },
-              { label: "Pricing", href: "#pricing" },
-              { label: "Resources", href: "#faq" },
-            ],
-            sticky: false,
-          }),
-        };
-
-    // Preserve existing footer from page, or create default footer if none
-    const existingFooter = currentSections.find((s) => s.type === "footer");
-    const footerSection: SectionEnvelope = existingFooter
-      ? structuredClone(existingFooter)
-      : {
-          id: crypto.randomUUID(),
-          type: "footer",
-          hidden: false,
-          settings: sanitizeSectionSettings({}),
-          data: sanitizeSectionData("footer", {
-            design: "columns",
-            siteName: "Modulus",
-            columns: [
-              { title: "Product", links: [{ label: "Features", href: "#features" }, { label: "Pricing", href: "#pricing" }] },
-              { title: "Company", links: [{ label: "About", href: "#about" }, { label: "Contact", href: "#contact" }] },
-            ],
-            social: [],
-            copyright: `© ${new Date().getFullYear()} All rights reserved.`,
-          }),
-        };
-
-    const bodySections: SectionEnvelope[] = generatedList
-      .filter((item) => item.type !== "header" && item.type !== "footer")
-      .map((item) => {
-        const itemType = item.type || "features";
-        return {
-          id: crypto.randomUUID(),
-          type: itemType,
-          hidden: false,
-          settings: sanitizeSectionSettings(item.settings || {}),
-          data: sanitizeSectionData(itemType, item.data || {}),
-        };
-      });
-
-    const afterSections: SectionEnvelope[] = [headerSection, ...bodySections, footerSection];
 
     return {
       id: crypto.randomUUID(),
       prompt,
-      summary: parsed.summary || "Generated new page layout and content",
-      target: { scope: "page" },
+      summary,
+      target: {
+        scope: "page",
+        rebuild: canvasOps.some((op) => op.op === "replace_page"),
+        focusSectionId: focusSectionId(canvasOps),
+      },
       before: currentSections,
-      after: afterSections,
+      after: applyOps(currentSections, canvasOps),
     };
+  }
+
+  private async plan(
+    prompt: string,
+    sections: SectionEnvelope[],
+    selectedSectionId: string | undefined,
+    history: ChatHistoryMessage[],
+    logging: LoggingContext,
+  ) {
+    const messages: OpenAiMessage[] = [
+      { role: "system", content: PLANNER_SYSTEM_PROMPT },
+      ...history.slice(-PLANNER_HISTORY_TURNS).map((m) => ({ role: m.role, content: m.content })),
+      { role: "user", content: buildPlannerInput(prompt, sections, selectedSectionId) },
+    ];
+
+    const raw = await this.callOpenAi(messages, {
+      scope: "plan",
+      logging,
+      temperature: 0,
+      maxTokens: 1200,
+      responseFormat: AI_PLAN_RESPONSE_FORMAT,
+    });
+
+    try {
+      return parsePlan(JSON.parse(raw), sections);
+    } catch (err) {
+      logger.warn({ err }, "Rejected invalid AI plan");
+      throw new AppError(502, "AI could not understand that request. Please try rephrasing it.");
+    }
+  }
+
+  private async materialize(
+    op: PlannedOp,
+    sections: SectionEnvelope[],
+    logging: LoggingContext,
+    reservedId?: string,
+  ): Promise<CanvasOp> {
+    switch (op.op) {
+      case "add":
+        return {
+          op: "add",
+          position: op.position,
+          section: await this.createSection(op.sectionType, op.instruction, logging, reservedId),
+        };
+      case "update": {
+        const target = sections.find((s) => s.id === op.sectionId);
+        if (!target) throw new AppError(422, "AI referenced a section that is not on the page.");
+        return { op: "update", section: await this.editSection(target, op.instruction, logging) };
+      }
+      case "replace_page":
+        return { op: "replace_page", sections: await this.createPage(op.sectionTypes, op.instruction, sections, logging) };
+      default:
+        return op;
+    }
+  }
+
+  private async createSection(
+    type: string,
+    instruction: string,
+    logging: LoggingContext,
+    id?: string,
+  ): Promise<SectionEnvelope> {
+    const raw = await this.callOpenAi(
+      [
+        { role: "system", content: SYSTEM_PROMPT_ADD_SECTION },
+        { role: "user", content: `Section type to create: "${type}"\nBrief: ${instruction}\n\nReturn the complete section JSON.` },
+      ],
+      { scope: "section_add", logging },
+    );
+    const parsed = parseJsonObject(raw);
+    const section = asRecord(parsed.section);
+    return buildSection(type, Object.keys(section).length > 0 ? section : parsed, id);
+  }
+
+  private async editSection(target: SectionEnvelope, instruction: string, logging: LoggingContext): Promise<SectionEnvelope> {
+    const raw = await this.callOpenAi(
+      [
+        { role: "system", content: SYSTEM_PROMPT_SECTION_EDIT },
+        {
+          role: "user",
+          content: `Current Section Type: "${target.type}"
+Current Section Settings: ${JSON.stringify(target.settings)}
+Current Section Data: ${JSON.stringify(target.data)}
+
+Change to make: ${instruction}
+
+Return the updated section JSON. If changing color/background, use a valid 6-digit hex in settings.customColors.`,
+        },
+      ],
+      { scope: "section", logging },
+    );
+    const parsed = parseJsonObject(raw);
+
+    return {
+      ...target,
+      settings: sanitizeSectionSettings({ ...target.settings, ...asRecord(parsed.settings) }),
+      data: sanitizeSectionData(target.type, { ...target.data, ...asRecord(parsed.data) }),
+    };
+  }
+
+  /** Existing header/footer are reused so a page redesign keeps the site's branding and navigation. */
+  private async createPage(
+    types: string[],
+    instruction: string,
+    existing: SectionEnvelope[],
+    logging: LoggingContext,
+  ): Promise<SectionEnvelope[]> {
+    const reusable = new Map(
+      existing.filter((s) => s.type === "header" || s.type === "footer").map((s) => [s.type, s] as const),
+    );
+    const toGenerate = types.filter((type) => !reusable.has(type));
+
+    let generated: Record<string, unknown>[] = [];
+    if (toGenerate.length > 0) {
+      const raw = await this.callOpenAi(
+        [
+          { role: "system", content: SYSTEM_PROMPT_PAGE },
+          { role: "user", content: `Section types in order: ${JSON.stringify(toGenerate)}\nBrief: ${instruction}` },
+        ],
+        { scope: "page", logging, maxTokens: 6000 },
+      );
+      const sections = parseJsonObject(raw).sections;
+      generated = Array.isArray(sections) ? sections.map(asRecord) : [];
+    }
+
+    const page = types.flatMap((type): SectionEnvelope[] => {
+      const reused = reusable.get(type);
+      if (reused) return [reused];
+      const index = generated.findIndex((s) => s.type === type);
+      if (index === -1) return [];
+      const [match] = generated.splice(index, 1);
+      return [buildSection(type, match!)];
+    });
+
+    if (page.length === 0) {
+      throw new AppError(502, "AI did not generate any page sections. Please try a more specific prompt.");
+    }
+    return page;
   }
 }
 
