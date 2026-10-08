@@ -162,7 +162,21 @@ export class WebsiteController {
     try {
       // Ensure user has access to this website
       const website = await websiteService.get(req.params.id, req.user!);
-      const options = { ...req.body, clientId: website.clientId, websiteId: website.id, userId: req.user?.id };
+      const abortController = new AbortController();
+
+      req.on("close", () => {
+        if (!res.writableEnded) {
+          abortController.abort();
+        }
+      });
+
+      const options = {
+        ...req.body,
+        clientId: website.clientId,
+        websiteId: website.id,
+        userId: req.user?.id,
+        signal: abortController.signal,
+      };
 
       if (!req.get("accept")?.includes(NDJSON)) {
         res.json({ suggestion: await aiGeneratorService.generate(options) });
@@ -182,6 +196,15 @@ export class WebsiteController {
         send({ type: "result", suggestion });
         res.end();
       } catch (error) {
+        if (abortController.signal.aborted) {
+          if (!res.headersSent) {
+            res.status(499).json({ error: { code: "CANCELLED", message: "AI generation cancelled." } });
+          } else {
+            res.end();
+          }
+          return;
+        }
+
         if (!res.headersSent) throw error;
         // Headers are already sent, so the error travels as the final event instead of an HTTP status.
         const appError = error instanceof AppError ? error : null;

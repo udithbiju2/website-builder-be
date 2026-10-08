@@ -50,6 +50,7 @@ export type GenerateAiOptions = {
   clientId?: string;
   websiteId?: string;
   userId?: string;
+  signal?: AbortSignal;
 };
 
 const COLOR_MAP: Record<string, string> = {
@@ -623,6 +624,7 @@ type OpenAiCallOptions = {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: Record<string, unknown>;
+  signal?: AbortSignal;
 };
 
 const PLANNER_HISTORY_TURNS = 6;
@@ -658,8 +660,46 @@ function focusSectionId(ops: readonly CanvasOp[]): string | undefined {
 }
 
 export class AiGeneratorService {
+  /**
+   * Runs free OpenAI Moderation check on user input to filter toxic, illegal or harmful content.
+   */
+  private async checkModeration(text: string, apiKey: string, signal?: AbortSignal): Promise<void> {
+    if (!text || !text.trim()) return;
+    try {
+      const timeoutSignal = AbortSignal.timeout(10_000);
+      const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+      const res = await fetch("https://api.openai.com/v1/moderations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ input: text }),
+        signal: combinedSignal,
+      });
+
+      if (!res.ok) return; // Fail-open so moderation transient error doesn't block legit requests
+      const json = (await res.json()) as {
+        results?: Array<{ flagged: boolean }>;
+      };
+      if (json.results?.[0]?.flagged) {
+        throw new AppError(
+          400,
+          "Your prompt was flagged by content safety moderation as potentially violating usage policies.",
+        );
+      }
+    } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
+      if (signal?.aborted) {
+        throw new AppError(499, "AI generation was cancelled.");
+      }
+      logger.warn({ err }, "OpenAI moderation check encountered a non-fatal warning");
+    }
+  }
+
   private async callOpenAi(messages: OpenAiMessage[], options: OpenAiCallOptions): Promise<string> {
-    const { scope, logging, temperature = 0.7, maxTokens = 3000, responseFormat = { type: "json_object" } } = options;
+    const { scope, logging, temperature = 0.7, maxTokens = 3000, responseFormat = { type: "json_object" }, signal } = options;
     const { apiKey, model } = await aiSettingsService.getCredentials();
     if (!apiKey) {
       throw new AppError(
@@ -678,64 +718,134 @@ export class AiGeneratorService {
       : messages;
 
     const startMs = Date.now();
-    const effectiveModel = model || "gpt-4o-mini";
+    const primaryModel = model || "gpt-4o-mini";
+    const fallbackModel = primaryModel === "gpt-4o" ? "gpt-4o-mini" : null;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: effectiveModel,
-        messages: safeMessages,
-        temperature,
-        response_format: responseFormat,
-        max_tokens: maxTokens,
-      }),
-    });
+    const executeCallWithRetry = async (
+      targetModel: string,
+    ): Promise<{
+      content: string;
+      modelUsed: string;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    }> => {
+      const maxRetries = 2;
+      let lastError: Error | null = null;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMsg = `OpenAI API returned status ${response.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        if (errorJson.error?.message) {
-          errorMsg = errorJson.error.message;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (signal?.aborted) {
+          throw new AppError(499, "AI generation was cancelled.");
         }
-      } catch {
-        // use default errorMsg
+
+        const timeoutSignal = AbortSignal.timeout(60_000);
+        const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+        try {
+          const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: targetModel,
+              messages: safeMessages,
+              temperature,
+              response_format: responseFormat,
+              max_tokens: maxTokens,
+            }),
+            signal: combinedSignal,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            let errorMsg = `OpenAI API returned status ${response.status}`;
+            try {
+              const errorJson = JSON.parse(errorText);
+              if (errorJson.error?.message) {
+                errorMsg = errorJson.error.message;
+              }
+            } catch {
+              // use default errorMsg
+            }
+
+            if (response.status === 401) {
+              throw new AppError(
+                401,
+                `Invalid OpenAI API Key (${errorMsg}). Please paste your valid OpenAI API key in Super Admin > Settings > AI Settings.`,
+              );
+            }
+
+            // Retry on 429 rate limit or 5xx server issues
+            if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
+              const delay = Math.pow(2, attempt) * 1000;
+              logger.warn(
+                { status: response.status, attempt, delay, targetModel },
+                "OpenAI rate-limited or error encountered, retrying...",
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue;
+            }
+
+            if (response.status === 429) {
+              throw new AppError(
+                429,
+                `OpenAI Rate Limit or Quota Exceeded (${errorMsg}). Please check your OpenAI account credits or update your key in Super Admin > Settings > AI Settings.`,
+              );
+            }
+
+            throw new AppError(502, `AI Generation Failed: ${errorMsg}`);
+          }
+
+          const json = (await response.json()) as {
+            model?: string;
+            choices?: Array<{ message?: { content?: string | null } }>;
+            usage?: {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              total_tokens?: number;
+            };
+          };
+
+          const content = json.choices?.[0]?.message?.content;
+          if (!content) {
+            throw new AppError(502, "OpenAI returned an empty response");
+          }
+
+          return { content, modelUsed: json.model || targetModel, usage: json.usage };
+        } catch (err: unknown) {
+          if (signal?.aborted || (err as Error)?.name === "AbortError") {
+            throw new AppError(499, "AI generation was cancelled.");
+          }
+          if (err instanceof AppError && (err.statusCode === 401 || err.statusCode === 429 || err.statusCode === 400)) {
+            throw err;
+          }
+          lastError = err as Error;
+          if (attempt < maxRetries) {
+            const delay = Math.pow(2, attempt) * 1000;
+            logger.warn({ err, attempt, delay }, "OpenAI call failed, retrying...");
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
       }
 
-      if (response.status === 401) {
-        throw new AppError(
-          401,
-          `Invalid OpenAI API Key (${errorMsg}). Please paste your valid OpenAI API key in Super Admin > Settings > AI Settings.`,
-        );
-      }
-      if (response.status === 429) {
-        throw new AppError(
-          429,
-          `OpenAI Rate Limit or Quota Exceeded (${errorMsg}). Please check your OpenAI account credits or update your key in Super Admin > Settings > AI Settings.`,
-        );
-      }
-
-      throw new AppError(502, `AI Generation Failed: ${errorMsg}`);
-    }
-
-    const json = (await response.json()) as {
-      model?: string;
-      choices?: Array<{ message?: { content?: string | null } }>;
-      usage?: {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        total_tokens?: number;
-      };
+      throw lastError || new AppError(502, "Failed to reach OpenAI service after retries.");
     };
 
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) {
-      throw new AppError(502, "OpenAI returned an empty response");
+    let callResult: {
+      content: string;
+      modelUsed: string;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
+
+    try {
+      callResult = await executeCallWithRetry(primaryModel);
+    } catch (primaryErr) {
+      if (fallbackModel && !(primaryErr instanceof AppError && primaryErr.statusCode === 401)) {
+        logger.warn({ primaryErr, fallbackModel }, "Primary model failed. Attempting fallback model.");
+        callResult = await executeCallWithRetry(fallbackModel);
+      } else {
+        throw primaryErr;
+      }
     }
 
     if (logging.clientId) {
@@ -745,11 +855,11 @@ export class AiGeneratorService {
             clientId: logging.clientId,
             websiteId: logging.websiteId || null,
             userId: logging.userId || null,
-            model: json.model || effectiveModel,
+            model: callResult.modelUsed,
             scope,
-            promptTokens: json.usage?.prompt_tokens ?? 0,
-            completionTokens: json.usage?.completion_tokens ?? 0,
-            totalTokens: json.usage?.total_tokens ?? 0,
+            promptTokens: callResult.usage?.prompt_tokens ?? 0,
+            completionTokens: callResult.usage?.completion_tokens ?? 0,
+            totalTokens: callResult.usage?.total_tokens ?? 0,
             durationMs: Date.now() - startMs,
           },
         })
@@ -758,7 +868,7 @@ export class AiGeneratorService {
         });
     }
 
-    return content;
+    return callResult.content;
   }
 
   /**
@@ -767,11 +877,16 @@ export class AiGeneratorService {
    * `onPlan` receives the planned layout before content generation, so the editor can show placeholders.
    */
   async generate(options: GenerateAiOptions, onPlan?: (layout: LayoutSlot[]) => void): Promise<AiSuggestionPayload> {
-    const { prompt, sectionId, currentSection, currentSections = [], history = [], clientId, websiteId, userId } =
+    const { prompt, sectionId, currentSection, currentSections = [], history = [], clientId, websiteId, userId, signal } =
       options;
     const logging: LoggingContext = { clientId, websiteId, userId };
 
-    const plan = await this.plan(prompt, currentSections, currentSection?.id ?? sectionId, history, logging);
+    const { apiKey } = await aiSettingsService.getCredentials();
+    if (apiKey) {
+      await this.checkModeration(prompt, apiKey, signal);
+    }
+
+    const plan = await this.plan(prompt, currentSections, currentSection?.id ?? sectionId, history, logging, signal);
 
     if (plan.intent !== "edit" || plan.ops.length === 0) {
       const reply = plan.intent === "edit" || !plan.reply ? FALLBACK_CLARIFY_REPLY : plan.reply;
@@ -782,7 +897,7 @@ export class AiGeneratorService {
     onPlan?.(previewLayout(currentSections, plan.ops, addIds));
 
     const canvasOps = await Promise.all(
-      plan.ops.map((op, i) => this.materialize(op, currentSections, logging, addIds[i])),
+      plan.ops.map((op, i) => this.materialize(op, currentSections, logging, addIds[i], signal)),
     );
     const summary = plan.reply || "Updated the page";
 
@@ -819,6 +934,7 @@ export class AiGeneratorService {
     selectedSectionId: string | undefined,
     history: ChatHistoryMessage[],
     logging: LoggingContext,
+    signal?: AbortSignal,
   ) {
     const messages: OpenAiMessage[] = [
       { role: "system", content: PLANNER_SYSTEM_PROMPT },
@@ -832,6 +948,7 @@ export class AiGeneratorService {
       temperature: 0,
       maxTokens: 1200,
       responseFormat: AI_PLAN_RESPONSE_FORMAT,
+      signal,
     });
 
     try {
@@ -847,21 +964,22 @@ export class AiGeneratorService {
     sections: SectionEnvelope[],
     logging: LoggingContext,
     reservedId?: string,
+    signal?: AbortSignal,
   ): Promise<CanvasOp> {
     switch (op.op) {
       case "add":
         return {
           op: "add",
           position: op.position,
-          section: await this.createSection(op.sectionType, op.instruction, logging, reservedId),
+          section: await this.createSection(op.sectionType, op.instruction, logging, reservedId, signal),
         };
       case "update": {
         const target = sections.find((s) => s.id === op.sectionId);
         if (!target) throw new AppError(422, "AI referenced a section that is not on the page.");
-        return { op: "update", section: await this.editSection(target, op.instruction, logging) };
+        return { op: "update", section: await this.editSection(target, op.instruction, logging, signal) };
       }
       case "replace_page":
-        return { op: "replace_page", sections: await this.createPage(op.sectionTypes, op.instruction, sections, logging) };
+        return { op: "replace_page", sections: await this.createPage(op.sectionTypes, op.instruction, sections, logging, signal) };
       default:
         return op;
     }
@@ -872,20 +990,26 @@ export class AiGeneratorService {
     instruction: string,
     logging: LoggingContext,
     id?: string,
+    signal?: AbortSignal,
   ): Promise<SectionEnvelope> {
     const raw = await this.callOpenAi(
       [
         { role: "system", content: SYSTEM_PROMPT_ADD_SECTION },
         { role: "user", content: `Section type to create: "${type}"\nBrief: ${instruction}\n\nReturn the complete section JSON.` },
       ],
-      { scope: "section_add", logging },
+      { scope: "section_add", logging, signal },
     );
     const parsed = parseJsonObject(raw);
     const section = asRecord(parsed.section);
     return buildSection(type, Object.keys(section).length > 0 ? section : parsed, id);
   }
 
-  private async editSection(target: SectionEnvelope, instruction: string, logging: LoggingContext): Promise<SectionEnvelope> {
+  private async editSection(
+    target: SectionEnvelope,
+    instruction: string,
+    logging: LoggingContext,
+    signal?: AbortSignal,
+  ): Promise<SectionEnvelope> {
     const raw = await this.callOpenAi(
       [
         { role: "system", content: SYSTEM_PROMPT_SECTION_EDIT },
@@ -900,7 +1024,7 @@ Change to make: ${instruction}
 Return the updated section JSON. If changing color/background, use a valid 6-digit hex in settings.customColors.`,
         },
       ],
-      { scope: "section", logging },
+      { scope: "section", logging, signal },
     );
     const parsed = parseJsonObject(raw);
 
@@ -917,6 +1041,7 @@ Return the updated section JSON. If changing color/background, use a valid 6-dig
     instruction: string,
     existing: SectionEnvelope[],
     logging: LoggingContext,
+    signal?: AbortSignal,
   ): Promise<SectionEnvelope[]> {
     const reusable = new Map(
       existing.filter((s) => s.type === "header" || s.type === "footer").map((s) => [s.type, s] as const),
@@ -930,7 +1055,7 @@ Return the updated section JSON. If changing color/background, use a valid 6-dig
           { role: "system", content: SYSTEM_PROMPT_PAGE },
           { role: "user", content: `Section types in order: ${JSON.stringify(toGenerate)}\nBrief: ${instruction}` },
         ],
-        { scope: "page", logging, maxTokens: 6000 },
+        { scope: "page", logging, maxTokens: 6000, signal },
       );
       const sections = parseJsonObject(raw).sections;
       generated = Array.isArray(sections) ? sections.map(asRecord) : [];
