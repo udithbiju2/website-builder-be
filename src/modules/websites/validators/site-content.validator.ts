@@ -217,6 +217,14 @@ export const headerSchema = Joi.object({
   design: flexibleVariant(HEADER_DESIGNS, "logo-left", {
     "logo_left": "logo-left",
     "center": "centered",
+    "dock": "glass-dock",
+    "stacked": "split-stacked",
+    "search": "command-bar",
+    "bento": "mega-menu-grid",
+    "drawer": "side-drawer",
+    "ticker": "headline-ticker",
+    "editorial": "luxury-editorial",
+    "console": "saas-console",
   }),
   siteName: text(120).default("Brand").optional(),
   logo: image.optional(),
@@ -235,6 +243,12 @@ export const headerSchema = Joi.object({
   currency: optionalText(10),
   mobileMenuType: Joi.string().valid("drawer", "fullscreen", "dropdown").optional(),
   hidden: Joi.boolean().optional(),
+  badge: optionalText(60),
+  searchPlaceholder: optionalText(100),
+  utilityLinks: Joi.array().items(link).max(8).optional(),
+  tagline: optionalText(120),
+  statusText: optionalText(80),
+  statusColor: optionalText(50),
 });
 
 export const footerSchema = Joi.object({

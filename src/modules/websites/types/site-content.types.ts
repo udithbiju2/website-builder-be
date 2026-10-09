@@ -62,6 +62,14 @@ export const HEADER_DESIGNS = [
   "ecommerce",
   "floating",
   "transparent",
+  "glass-dock",
+  "split-stacked",
+  "command-bar",
+  "mega-menu-grid",
+  "side-drawer",
+  "headline-ticker",
+  "luxury-editorial",
+  "saas-console",
 ] as const;
 export const FOOTER_DESIGNS = [
   "columns",
@@ -213,6 +221,7 @@ export type HeaderMenuItem = {
   href: string;
   badge?: string;
   icon?: string;
+  description?: string;
   children?: HeaderSubMenuItem[];
 };
 
@@ -236,6 +245,12 @@ export type HeaderData = {
   currency?: string;
   mobileMenuType?: "drawer" | "fullscreen" | "dropdown";
   hidden?: boolean;
+  badge?: string;
+  searchPlaceholder?: string;
+  utilityLinks?: LinkRef[];
+  tagline?: string;
+  statusText?: string;
+  statusColor?: "green" | "blue" | "orange" | "purple" | string;
 };
 
 export type FooterNewsletter = {
