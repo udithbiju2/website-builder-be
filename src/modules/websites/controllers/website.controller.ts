@@ -6,7 +6,7 @@ import type { LayoutSlot } from "../ai/ai-ops.js";
 import { aiGeneratorService, type AiSuggestionPayload, type GenerateAiOptions } from "../services/ai-generator.service.js";
 import { aiChatService } from "../services/ai-chat.service.js";
 import { aiSiteCopilotService } from "../services/ai-site-copilot.service.js";
-import { isGeneratedSectionType } from "../services/site-generator.js";
+import { isEditableSectionType } from "../services/site-generator.js";
 import { websiteGenerationService } from "../services/website-generation.service.js";
 import { websiteService } from "../services/website.service.js";
 import type { TemplateListQuery, WebsiteListQuery } from "../types/website.types.js";
@@ -229,7 +229,7 @@ export class WebsiteController {
       const body = req.body as GenerateAiOptions;
       const selectedType = body.scope === "section" ? body.currentSection?.type : undefined;
       const useCopilot =
-        website.builderType === BuilderType.AI && (selectedType === undefined || isGeneratedSectionType(selectedType));
+        website.builderType === BuilderType.AI && (selectedType === undefined || isEditableSectionType(selectedType));
 
       const generate = (onPlan?: (layout: LayoutSlot[]) => void): Promise<AiSuggestionPayload> =>
         useCopilot

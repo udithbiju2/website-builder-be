@@ -13,6 +13,7 @@ export type JsonCompletionRequest = {
   temperature: number;
   /** Stored on the usage log row, e.g. "site_plan". */
   scope: string;
+  signal?: AbortSignal;
 };
 
 /** Returns the parsed JSON reply. Injected into the site generator so tests can fake it. */
@@ -44,16 +45,18 @@ class OpenAiRequestError extends Error {
   }
 }
 
-async function post(apiKey: string, body: Record<string, unknown>): Promise<ChatCompletionResponse> {
+async function post(apiKey: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<ChatCompletionResponse> {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
   } catch (error) {
+    if (signal?.aborted) throw new AppError(499, "AI generation was cancelled.", "CANCELLED");
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     throw new OpenAiRequestError(0, timedOut ? "The AI provider took too long to respond." : "Could not reach the AI provider.");
   }
@@ -84,7 +87,7 @@ function toAppError(error: OpenAiRequestError): AppError {
 export function createOpenAiJsonCompletion(context: OpenAiContext): JsonCompletion {
   const reasoning = isReasoningModel(context.model);
 
-  return async ({ messages, schema, maxTokens, temperature, scope }) => {
+  return async ({ messages, schema, maxTokens, temperature, scope, signal }) => {
     const base: Record<string, unknown> = {
       model: context.model,
       messages,
@@ -97,16 +100,20 @@ export function createOpenAiJsonCompletion(context: OpenAiContext): JsonCompleti
 
     let reply: ChatCompletionResponse;
     try {
-      reply = await post(context.apiKey, {
-        ...base,
-        response_format: schema ? { type: "json_schema", json_schema: { ...schema, strict: true } } : jsonObject,
-      });
+      reply = await post(
+        context.apiKey,
+        {
+          ...base,
+          response_format: schema ? { type: "json_schema", json_schema: { ...schema, strict: true } } : jsonObject,
+        },
+        signal,
+      );
     } catch (error) {
       if (!(error instanceof OpenAiRequestError)) throw error;
       // Older models don't support structured outputs; fall back to plain JSON mode.
       if (schema && error.status === 400 && /response_format|json_schema/i.test(error.message)) {
         try {
-          reply = await post(context.apiKey, { ...base, response_format: jsonObject });
+          reply = await post(context.apiKey, { ...base, response_format: jsonObject }, signal);
         } catch (fallbackError) {
           if (fallbackError instanceof OpenAiRequestError) throw toAppError(fallbackError);
           throw fallbackError;
