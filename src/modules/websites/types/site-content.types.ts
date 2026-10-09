@@ -356,6 +356,9 @@ export type SectionCustomColors = {
   primary?: string;
   muted?: string;
   border?: string;
+  /** Start and end colors of gradient text (e.g. the hero's highlighted words). */
+  gradientFrom?: string;
+  gradientTo?: string;
 };
 
 export type SectionSettings = {

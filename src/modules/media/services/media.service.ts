@@ -22,7 +22,7 @@ import type {
   UploadedFile,
   UploadMediaInput,
 } from "../types/media.types.js";
-import { detectFile } from "./file-signature.js";
+import { detectFile, type DetectedFile } from "./file-signature.js";
 
 const MB = 1024 * 1024;
 
@@ -195,6 +195,47 @@ export class MediaService {
     }
     if (input.folderId) await assertFolderBelongs(input.folderId, clientId);
 
+    return this.store(file, detected, {
+      clientId,
+      websiteId: input.websiteId ?? null,
+      folderId: input.folderId ?? null,
+      altText: input.altText ?? null,
+      uploadedById: actor.id,
+    });
+  }
+
+  /** Saves an AI-generated image to the client's library, with the same checks as an upload. */
+  async storeGeneratedImage(input: {
+    clientId: string;
+    websiteId: string | null;
+    userId: string | null;
+    buffer: Buffer;
+    fileName: string;
+    altText: string;
+  }): Promise<MediaFileView> {
+    const detected = detectFile(input.buffer);
+    if (!detected || detected.kind !== MediaKind.IMAGE) {
+      throw new AppError(502, "The AI returned an image in an unsupported format.", "AI_IMAGE_INVALID");
+    }
+    if (input.buffer.length > MAX_BYTES_BY_KIND[MediaKind.IMAGE]) {
+      throw new AppError(502, "The AI returned an image that is too large to store.", "AI_IMAGE_TOO_LARGE");
+    }
+    const file = { buffer: input.buffer, size: input.buffer.length, originalName: input.fileName };
+    return this.store(file, detected, {
+      clientId: input.clientId,
+      websiteId: input.websiteId,
+      folderId: null,
+      altText: input.altText,
+      uploadedById: input.userId,
+    });
+  }
+
+  private async store(
+    file: Pick<UploadedFile, "buffer" | "size" | "originalName">,
+    detected: DetectedFile,
+    target: { clientId: string; websiteId: string | null; folderId: string | null; altText: string | null; uploadedById: string | null },
+  ): Promise<MediaFileView> {
+    const { clientId } = target;
     const usage = await storageUsage(clientId);
     if (usage.usedBytes + file.size > usage.limitBytes) {
       throw new AppError(409, "Your media storage is full. Delete some files first.", "STORAGE_LIMIT");
@@ -209,17 +250,17 @@ export class MediaService {
         data: {
           id,
           clientId,
-          websiteId: input.websiteId ?? null,
-          folderId: input.folderId ?? null,
+          websiteId: target.websiteId,
+          folderId: target.folderId,
           kind: detected.kind,
           fileName: cleanFileName(file.originalName, detected.extension),
           mimeType: detected.mimeType,
           sizeBytes: file.size,
           width: detected.width ?? null,
           height: detected.height ?? null,
-          altText: input.altText?.trim() || null,
+          altText: target.altText?.trim().slice(0, 300) || null,
           storageKey,
-          uploadedById: actor.id,
+          uploadedById: target.uploadedById,
         },
         include: { client: { select: { businessName: true } } },
       });

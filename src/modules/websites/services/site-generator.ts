@@ -38,6 +38,15 @@ export function isGeneratedSectionType(value: unknown): value is GeneratedSectio
   return typeof value === "string" && (GENERATED_SECTION_TYPES as readonly string[]).includes(value);
 }
 
+/** Every page has exactly one of each, so the AI may change them but never add, remove or move them. */
+export const FIXED_SECTION_TYPES = ["header", "footer"] as const;
+export const EDITABLE_SECTION_TYPES = [...FIXED_SECTION_TYPES, ...GENERATED_SECTION_TYPES] as const;
+export type EditableSectionType = (typeof EDITABLE_SECTION_TYPES)[number];
+
+export function isEditableSectionType(value: unknown): value is EditableSectionType {
+  return typeof value === "string" && (EDITABLE_SECTION_TYPES as readonly string[]).includes(value);
+}
+
 const HEADER_DESIGN_CHOICES = ["logo-left", "centered", "minimalist", "floating"] as const;
 const FOOTER_DESIGN_CHOICES = ["columns", "simple", "centered", "split"] as const;
 const MAX_SECTIONS_PER_PAGE = 8;
@@ -390,9 +399,10 @@ export type CleanContext = {
 
 function resolveImage(value: unknown, context: CleanContext): { url: string; alt: string } | typeof REMOVE {
   const ref = (typeof value === "string" ? value : isRecord(value) && typeof value.url === "string" ? value.url : "").trim();
-  // "Image" is the sanitizer's placeholder for bare strings; the library's alt text is better.
+  // The sanitizer's placeholders for bare strings; the library's alt text is better.
+  const placeholder = (alt: string) => alt === "Image" || alt === "Hero Background";
   const altOf = (fallback: string) =>
-    (isRecord(value) && typeof value.alt === "string" && value.alt.trim() && value.alt !== "Image" ? value.alt : fallback).slice(0, 300);
+    (isRecord(value) && typeof value.alt === "string" && value.alt.trim() && !placeholder(value.alt) ? value.alt : fallback).slice(0, 300);
   const token = /^IMAGE_(\d{1,2})$/i.exec(ref);
   const image = token ? context.images[Number(token[1]) - 1] : context.images.find((candidate) => candidate.url === ref);
   if (image) return { url: image.url, alt: altOf(image.alt) };
@@ -400,7 +410,13 @@ function resolveImage(value: unknown, context: CleanContext): { url: string; alt
   return REMOVE;
 }
 
-function cleanHref(href: string, context: CleanContext): string {
+/** A library token, library URL or URL already on the page as an image value; null for anything else. */
+export function resolveImageRef(value: unknown, context: CleanContext): { url: string; alt: string } | null {
+  const resolved = resolveImage(value, context);
+  return resolved === REMOVE ? null : resolved;
+}
+
+export function cleanHref(href: string, context: CleanContext): string {
   const trimmed = href.trim();
   if (/^#[a-z][a-z0-9-]{0,39}$/i.test(trimmed)) return trimmed.toLowerCase();
   if (context.keepHrefs?.has(trimmed)) return trimmed;
@@ -475,7 +491,14 @@ export function cleanSection(
     ...options.baseSettings,
     ...(rawSettings.background ? { background: rawSettings.background } : {}),
     ...(rawSettings.spacing ? { spacing: rawSettings.spacing } : {}),
-    ...(options.baseSettings && isRecord(rawSettings.customColors) ? { customColors: rawSettings.customColors } : {}),
+    ...(options.baseSettings && isRecord(rawSettings.customColors)
+      ? {
+          customColors: {
+            ...(isRecord(options.baseSettings.customColors) ? options.baseSettings.customColors : {}),
+            ...rawSettings.customColors,
+          },
+        }
+      : {}),
   });
   // The sanitizer fills missing fields with generic demo copy; an empty reply shouldn't become that.
   if (!isRecord(section.data) || Object.keys(section.data).length === 0) return null;

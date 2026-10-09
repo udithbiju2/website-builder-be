@@ -42,13 +42,31 @@ const ANCHOR = /^[a-z][a-z0-9-]{0,39}$/;
 const text = (max: number) => Joi.string().trim().max(max);
 const optionalText = (max: number) => text(max).allow("").optional();
 
+/**
+ * Field metadata read by the AI field catalog (`ai/field-catalog.ts`):
+ * - `kind`: "image" | "link" marks composite values the AI fills in a special way.
+ * - `ai: "locked"`: the AI may not set it (third-party media, invented social proof).
+ * - `fact`: the value must match this business fact (e.g. "contactEmail") or be left out.
+ * - `shape`: aspect of new images for this field (default landscape).
+ * - `partOf`: the value must be words taken from this sibling field, or it isn't shown.
+ */
+export type FieldMeta = {
+  kind?: "image" | "link";
+  ai?: "locked";
+  fact?: string;
+  shape?: "square" | "portrait";
+  partOf?: string;
+};
+const meta = (value: FieldMeta) => value;
+const locked = meta({ ai: "locked" });
+
 const link = Joi.object({
   label: text(80).required(),
   href: text(2048)
     .pattern(SAFE_HREF)
     .required()
     .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
-});
+}).meta(meta({ kind: "link" }));
 
 const subMenuItem = Joi.object({
   label: text(80).required(),
@@ -79,7 +97,9 @@ const image = Joi.object({
     .optional()
     .messages({ "string.pattern.base": "Images must use an http(s) URL or a /path" }),
   alt: text(300).allow("").optional().default(""),
-}).allow(null);
+})
+  .allow(null)
+  .meta(meta({ kind: "image" }));
 
 const color = Joi.string().pattern(HEX_COLOR).required().messages({ "string.pattern.base": "Use a #rrggbb color" });
 
@@ -373,7 +393,7 @@ export const headerSchema = Joi.object({
     "ticker": "headline-ticker",
     "editorial": "luxury-editorial",
     "console": "saas-console",
-  }),
+  }).description('"transparent" = a see-through header laid over the top of the first section (e.g. its background photo); only when position is "static" and sticky is false'),
   siteName: text(120).default("Brand").optional(),
   logo: image.optional(),
   menu: Joi.array().items(menuItem).max(24).default([]).optional(),
@@ -381,9 +401,14 @@ export const headerSchema = Joi.object({
   secondaryCta: link.optional(),
   announcement: optionalText(200),
   announcementLink: link.optional(),
-  position: Joi.string().valid("static", "sticky", "fixed", "floating").optional(),
-  sticky: Joi.boolean().default(false).optional(),
-  overlay: Joi.boolean().optional(),
+  position: Joi.string()
+    .valid("static", "sticky", "fixed", "floating")
+    .optional()
+    .description("Sticky, fixed and floating headers are never see-through"),
+  sticky: Joi.boolean().default(false).optional().description('Same as position "sticky" when position is not set'),
+  overlay: Joi.boolean()
+    .optional()
+    .description('true = keep the design but make the header see-through over the first section, like design "transparent"; same position rules'),
   showSearch: Joi.boolean().optional(),
   showAccount: Joi.boolean().optional(),
   showCart: Joi.boolean().optional(),
@@ -415,9 +440,9 @@ export const footerSchema = Joi.object({
   menu: Joi.array().items(link).max(12).optional(),
   contact: Joi.object({
     title: optionalText(60),
-    email: optionalText(255),
-    phone: optionalText(32),
-    address: optionalText(500),
+    email: optionalText(255).meta(meta({ fact: "contactEmail" })),
+    phone: optionalText(32).meta(meta({ fact: "contactPhone" })),
+    address: optionalText(500).meta(meta({ fact: "address" })),
     hours: optionalText(200),
   }).optional(),
   social: Joi.array().items(link).max(12).required(),
@@ -453,27 +478,39 @@ export const heroSchema = Joi.object({
   eyebrow: optionalText(200),
   badgeIcon: optionalText(50),
   heading: optionalText(200),
-  highlightText: optionalText(100),
+  highlightText: optionalText(100)
+    .description(
+      "Words of the heading shown as gradient text (colors: settings.customColors.gradientFrom/gradientTo); use the whole heading for a fully gradient heading.",
+    )
+    .meta(meta({ partOf: "heading" })),
   subheading: optionalText(500),
   description: optionalText(1000),
   primaryCta: link.optional(),
   secondaryCta: link.optional(),
   tertiaryCta: link.optional(),
   buttons: Joi.array().items(link).max(6).optional(),
-  mediaType: Joi.string().valid("image", "video", "both").optional(),
-  videoUrl: optionalText(500),
+  mediaType: Joi.string().valid("image", "video", "both").optional().meta(locked),
+  videoUrl: optionalText(500).meta(locked),
   videoAutoplay: Joi.boolean().optional(),
   videoControls: Joi.boolean().optional(),
   videoLoop: Joi.boolean().optional(),
-  image: image.optional(),
-  secondaryImage: image.optional(),
-  backgroundImage: image.optional(),
-  bgImagePosition: Joi.string().valid("bottom", "center", "top", "cover").optional(),
-  bgOverlayType: Joi.string().valid("dark", "light", "gradient", "none").optional(),
-  backgroundVideoUrl: optionalText(500),
-  imagePosition: Joi.string().valid("right", "left", "bottom", "background", "card", "center", "top", "none").optional(),
+  image: image.optional().description("Picture shown beside or below the text, positioned by imagePosition. Not the background."),
+  secondaryImage: image.optional().description("Second picture used by some variants next to image."),
+  backgroundImage: image
+    .optional()
+    .description("Photo covering the whole section behind the text; works with every variant."),
+  bgImagePosition: Joi.string().valid("bottom", "center", "top", "cover").optional().description("Focus of backgroundImage."),
+  bgOverlayType: Joi.string()
+    .valid("dark", "light", "gradient", "none")
+    .optional()
+    .description("Tint over backgroundImage that keeps the text readable."),
+  backgroundVideoUrl: optionalText(500).meta(locked),
+  imagePosition: Joi.string()
+    .valid("right", "left", "bottom", "background", "card", "center", "top", "none")
+    .optional()
+    .description('Where image is shown; "background" puts image behind the text.'),
   imageStyle: Joi.string().valid("mockup", "rounded", "glow", "shadow", "plain").optional(),
-  overlayOpacity: Joi.number().min(0).max(100).optional(),
+  overlayOpacity: Joi.number().min(0).max(100).optional().description("Strength of bgOverlayType, 0-100."),
   overlayBlur: Joi.boolean().optional(),
   minHeight: Joi.string().valid("auto", "compact", "screen", "tall").optional(),
   contentAlign: Joi.string().valid("center", "left", "right").optional(),
@@ -482,7 +519,9 @@ export const heroSchema = Joi.object({
     stars: Joi.number().min(1).max(5).optional(),
     text: optionalText(200),
     avatarCount: Joi.number().min(1).max(10).optional(),
-  }).optional(),
+  })
+    .optional()
+    .meta(locked),
   floatingCards: Joi.array()
     .items(
       Joi.object({
@@ -493,7 +532,8 @@ export const heroSchema = Joi.object({
       })
     )
     .max(4)
-    .optional(),
+    .optional()
+    .meta(locked),
   trustedBy: Joi.object({
     label: optionalText(100),
     logos: Joi.array()
@@ -505,7 +545,9 @@ export const heroSchema = Joi.object({
       )
       .max(8)
       .optional(),
-  }).optional(),
+  })
+    .optional()
+    .meta(locked),
   carouselSpeed: Joi.number().min(5).max(200).optional(),
   carouselDirection: Joi.string().valid("left-to-right", "right-to-left").optional(),
   showDoodles: Joi.boolean().optional(),
@@ -688,9 +730,9 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
-    email: optionalText(255),
-    phone: optionalText(32),
-    address: optionalText(500),
+    email: optionalText(255).meta(meta({ fact: "contactEmail" })),
+    phone: optionalText(32).meta(meta({ fact: "contactPhone" })),
+    address: optionalText(500).meta(meta({ fact: "address" })),
     officeHours: optionalText(100),
     responseTime: optionalText(100),
     showForm: Joi.boolean().required(),
@@ -707,7 +749,8 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
         }),
       )
       .max(6)
-      .optional(),
+      .optional()
+      .meta(locked),
     cardStyle: Joi.string()
       .valid("default", "bordered", "flat", "glass", "elevated", "contrast")
       .optional(),
@@ -819,7 +862,7 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
           department: optionalText(80),
           bio: optionalText(600),
           location: optionalText(100),
-          photo: image.optional(),
+          photo: image.meta(meta({ shape: "square" })).optional(),
           tags: Joi.array().items(text(50)).max(6).optional(),
           link: link.optional(),
           socialLinks: Joi.array()
@@ -835,7 +878,8 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
               }),
             )
             .max(5)
-            .optional(),
+            .optional()
+            .meta(locked),
         }),
       )
       .max(24)
@@ -931,40 +975,50 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
   custom: customDataSchema,
 };
 
+/** Content schema of each section type; the single source for validation and the AI field catalog. */
+export const SECTION_DATA_SCHEMAS: Readonly<Record<SectionType, Joi.ObjectSchema>> = SECTION_DATA;
+
+export const sectionSettingsSchema = Joi.object({
+  background: Joi.string()
+    .valid(...SECTION_BACKGROUNDS)
+    .required()
+    .description("Theme background preset. A custom color goes in customColors.background."),
+  hideOnMobile: Joi.boolean().required(),
+  hideOnDesktop: Joi.boolean().optional(),
+  spacing: Joi.string()
+    .valid(...SECTION_SPACINGS)
+    .optional(),
+  align: Joi.string()
+    .valid(...SECTION_ALIGNMENTS)
+    .optional(),
+  anchor: Joi.string()
+    .pattern(ANCHOR)
+    .allow("")
+    .optional()
+    .messages({ "string.pattern.base": "Anchors use lowercase letters, numbers and hyphens" }),
+  customColors: Joi.object({
+    background: color.optional().description("Section background color."),
+    text: color.optional().description("Text color."),
+    primary: color.optional().description("Buttons, links and accents."),
+    muted: color.optional().description("Secondary text."),
+    border: color.optional(),
+    gradientFrom: color
+      .optional()
+      .description("Start color of gradient text: the hero's highlightText, or its whole heading when nothing is highlighted."),
+    gradientTo: color.optional().description("End color of gradient text."),
+  }).optional(),
+  font: Joi.string()
+    .valid(...FONT_KEYS)
+    .optional(),
+});
+
 export const sectionSchema = Joi.object({
   id: text(64).required(),
   type: Joi.string()
     .valid(...SECTION_TYPES)
     .required(),
   hidden: Joi.boolean().required(),
-  settings: Joi.object({
-    background: Joi.string()
-      .valid(...SECTION_BACKGROUNDS)
-      .required(),
-    hideOnMobile: Joi.boolean().required(),
-    hideOnDesktop: Joi.boolean().optional(),
-    spacing: Joi.string()
-      .valid(...SECTION_SPACINGS)
-      .optional(),
-    align: Joi.string()
-      .valid(...SECTION_ALIGNMENTS)
-      .optional(),
-    anchor: Joi.string()
-      .pattern(ANCHOR)
-      .allow("")
-      .optional()
-      .messages({ "string.pattern.base": "Anchors use lowercase letters, numbers and hyphens" }),
-    customColors: Joi.object({
-      background: color.optional(),
-      text: color.optional(),
-      primary: color.optional(),
-      muted: color.optional(),
-      border: color.optional(),
-    }).optional(),
-    font: Joi.string()
-      .valid(...FONT_KEYS)
-      .optional(),
-  }).required(),
+  settings: sectionSettingsSchema.required(),
   data: Joi.when("type", {
     switch: SECTION_TYPES.map((type) => ({ is: type, then: SECTION_DATA[type].required() })),
   }),
