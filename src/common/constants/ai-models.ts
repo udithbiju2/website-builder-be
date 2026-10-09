@@ -81,10 +81,14 @@ const LEGACY_PRICING: readonly Pick<AiModelInfo, "id" | "inputPerMillion" | "out
   { id: "o1-mini", inputPerMillion: 1.1, outputPerMillion: 4.4 },
 ];
 
+/** Used by the editor copilot to create images; output tokens are image tokens. */
+export const IMAGE_GENERATION_MODEL = "gpt-image-1";
+
 /** Every priced model, for estimating the cost of logged usage. */
 export const AI_MODEL_PRICING: readonly Pick<AiModelInfo, "id" | "inputPerMillion" | "outputPerMillion">[] = [
   ...AI_MODELS,
   ...LEGACY_PRICING,
+  { id: IMAGE_GENERATION_MODEL, inputPerMillion: 5, outputPerMillion: 40 },
 ];
 
 export function findAiModel(id: string | null | undefined): AiModelInfo | undefined {

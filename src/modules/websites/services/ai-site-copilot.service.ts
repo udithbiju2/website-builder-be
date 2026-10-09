@@ -4,39 +4,55 @@ import { AppError } from "../../../common/errors/AppError.js";
 import { prisma } from "../../../config/prisma.js";
 import { MediaKind } from "../../../generated/prisma/enums.js";
 import { aiSettingsService } from "../../admin-settings/services/ai-settings.service.js";
+import { mediaService } from "../../media/services/media.service.js";
+import { describeCatalog, describeSectionTypes } from "../ai/field-catalog.js";
+import {
+  MAX_PAGE_SECTIONS,
+  compileEdits,
+  parseEditReply,
+  sectionIssues,
+  type CompiledEdits,
+  type EditOp,
+  type EditReply,
+  type ImageNeed,
+  type ImageSource,
+} from "../ai/section-edits.js";
 import type { GenerationBrief } from "../types/website-generation.types.js";
 import type { PageView, WebsiteDetail } from "../types/website.types.js";
 import type { AiSuggestionPayload, GenerateAiOptions, SectionEnvelope } from "./ai-generator.service.js";
+import { createOpenAiImageGenerator } from "./openai-image.client.js";
 import { createOpenAiJsonCompletion, type ChatMessage } from "./openai-json.client.js";
 import {
   GENERATED_SECTION_TYPES,
-  SECTION_GUIDE,
-  cleanSection,
   describeFacts,
-  describeImages,
+  isEditableSectionType,
   isGeneratedSectionType,
   type BriefImage,
   type CleanContext,
+  type EditableSectionType,
   type SiteFacts,
 } from "./site-generator.js";
 import { loadImages, toBriefImage } from "./website-generation.service.js";
 
 /**
- * Editor chat for AI-built websites: grounded in the business details and the original brief,
- * so it rewrites copy, SEO and page structure for that business, not just styling.
+ * Editor chat for AI-built websites: grounded in the business details and the original brief.
+ * The AI answers with field-level operations (see `ai/section-edits.ts`) that are checked against
+ * the section schemas; anything invalid goes back to the AI once to be fixed.
  */
 
-const INTENTS = ["chat", "edit_section", "add_section", "rewrite_page", "redesign_page", "update_seo"] as const;
-type Intent = (typeof INTENTS)[number];
-
 const MAX_LIBRARY_IMAGES = 24;
-const MAX_REDESIGN_SECTIONS = 8;
 /** Above this, page sections are summarized instead of sent in full. */
 const MAX_PAGE_JSON_CHARS = 40_000;
-const SEO_TITLE_MAX = 160;
-const SEO_DESCRIPTION_MAX = 320;
+/** New images per reply; each one takes several seconds and is billed. */
+const MAX_GENERATED_IMAGES = 2;
 
-type JsonRecord = Record<string, unknown>;
+export const IMAGE_SOURCE_QUESTION = "Should I use a photo from your media library or generate a new one with AI?";
+const SAVED_IMAGE_NOTE = "The new image was saved to your media library.";
+const SEO_NOTE = "Updated the page's SEO title and description.";
+
+/** Creates one image in the owner's library and returns it. */
+export type ImageCreator = (description: string, shape: ImageNeed["shape"]) => Promise<BriefImage>;
+export type JsonAsk = (messages: ChatMessage[]) => Promise<unknown>;
 
 export type SiteCopilotOptions = Omit<GenerateAiOptions, "clientId" | "websiteId" | "userId"> & {
   website: WebsiteDetail;
@@ -49,15 +65,13 @@ export type CopilotContext = {
   page: PageView | null;
 };
 
+type JsonRecord = Record<string, unknown>;
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function str(value: unknown, max: number): string {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-
-/** Image URLs and hrefs already on the page, so edits don't strip the owner's own media and links. */
+/** Image URLs and hrefs already on the page, so edits may keep the owner's own media and links. */
 function collectExisting(value: unknown, urls: Set<string>, hrefs: Set<string>): void {
   if (Array.isArray(value)) {
     for (const item of value) collectExisting(item, urls, hrefs);
@@ -84,71 +98,38 @@ async function loadLibrary(clientId: string, briefIds: string[]): Promise<BriefI
   return [...briefImages, ...recent.map(toBriefImage)];
 }
 
-/**
- * The AI's changes may not introduce third-party media, invented ratings or contact details;
- * existing owner values survive because the delta is merged over the current data.
- */
-function protectDelta(type: string, delta: JsonRecord, existing: JsonRecord, facts: SiteFacts): void {
-  if (type === "hero") {
-    for (const key of ["videoUrl", "backgroundVideoUrl", "trustedBy", "rating", "floatingCards", "mediaType"]) delete delta[key];
-  }
-  if (type === "team" && Array.isArray(delta.members)) {
-    const previous = Array.isArray(existing.members) ? existing.members : [];
-    delta.members = delta.members.map((member, index) => {
-      if (!isRecord(member)) return member;
-      const { socialLinks: _ignored, ...rest } = member;
-      const before = previous[index];
-      return isRecord(before) && before.socialLinks !== undefined ? { ...rest, socialLinks: before.socialLinks } : rest;
-    });
-  }
-  if (type === "contact") {
-    delete delta.channels;
-    for (const [field, fact] of [
-      ["email", facts.contactEmail],
-      ["phone", facts.contactPhone],
-      ["address", facts.address],
-    ] as const) {
-      if (field in delta && delta[field] !== existing[field] && delta[field] !== fact) delete delta[field];
-    }
-  }
+function answeredImageSource(options: SiteCopilotOptions): boolean {
+  const lastAnswer = [...(options.history ?? [])].reverse().find((message) => message.role === "assistant");
+  return Boolean(lastAnswer?.content.includes(IMAGE_SOURCE_QUESTION));
 }
 
-function toEnvelope(section: unknown): SectionEnvelope {
-  return section as SectionEnvelope;
+/** Words that name each image source; a quote claiming a source has to contain one. */
+const SOURCE_WORDS: Record<Exclude<ImageSource, "unspecified">, RegExp> = {
+  generate: /\b(generat\w*|ai|a\.i\.?|creat\w*)\b/i,
+  library: /\b(librar\w*|upload\w*|media|my (own )?(photos?|images?|pictures?|pics?))\b/i,
+};
+
+/** The AI's quote of the owner choosing an image source names that source and is in the owner's recent messages. */
+function ownerSaid(options: SiteCopilotOptions, source: ImageSource, quote: string): boolean {
+  if (source === "unspecified" || !SOURCE_WORDS[source].test(quote)) return false;
+  const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();
+  const needle = normalize(quote);
+  if (needle.length < 3) return false;
+  const ownerMessages = [options.prompt, ...(options.history ?? []).filter((m) => m.role === "user").slice(-3).map((m) => m.content)];
+  return ownerMessages.some((message) => normalize(message).includes(needle));
 }
 
-/** Applies the AI's changes to an existing section; null when nothing valid came back. */
-function mergeSection(existing: SectionEnvelope, raw: unknown, context: CopilotContext): SectionEnvelope | null {
-  if (!isGeneratedSectionType(existing.type)) return null;
-  const entry = isRecord(raw) ? raw : {};
-  const delta = isRecord(entry.data) ? { ...entry.data } : {};
-  if (Object.keys(delta).length === 0 && !isRecord(entry.settings)) return null;
-  protectDelta(existing.type, delta, existing.data, context.facts);
-  const cleaned = cleanSection(
-    { type: existing.type, settings: entry.settings, data: { ...existing.data, ...delta } },
-    existing.type,
-    context.facts,
-    context.clean,
-    { id: existing.id, baseSettings: existing.settings, trusted: true },
-  );
-  return cleaned ? toEnvelope({ ...cleaned, hidden: existing.hidden }) : null;
+/** First sentence of an image description, as alt text. */
+function altFromDescription(description: string): string {
+  const sentence = description.split(/(?<=[.!?])\s/)[0] ?? description;
+  return sentence.length <= 125 ? sentence : `${sentence.slice(0, 122).trimEnd()}...`;
 }
 
-function newSection(raw: unknown, context: CopilotContext): SectionEnvelope | null {
-  const type = isRecord(raw) ? raw.type : undefined;
-  if (!isGeneratedSectionType(type)) return null;
-  const cleaned = cleanSection(raw, type, context.facts, context.clean);
-  return cleaned ? toEnvelope(cleaned) : null;
-}
-
-function parseSeo(raw: unknown, page: PageView | null): AiSuggestionPayload["seo"] {
-  if (!page || !isRecord(raw)) return undefined;
-  const seoTitle = str(raw.title, SEO_TITLE_MAX);
-  const seoDescription = str(raw.description, SEO_DESCRIPTION_MAX);
-  if (!seoTitle && !seoDescription) return undefined;
-  const next = { seoTitle: seoTitle || page.seoTitle || "", seoDescription: seoDescription || page.seoDescription || "" };
-  if (next.seoTitle === (page.seoTitle ?? "") && next.seoDescription === (page.seoDescription ?? "")) return undefined;
-  return { pageId: page.id, ...next };
+function describeLibrary(images: BriefImage[], onPage: ReadonlySet<string>): string {
+  if (images.length === 0) return "The owner's media library has no photos yet, so new images use GENERATE.";
+  return `Photos in the owner's media library:\n${images
+    .map((image, index) => `- IMAGE_${index + 1}: ${image.alt || image.fileName}${onPage.has(image.url) ? " (already used on this page)" : ""}`)
+    .join("\n")}`;
 }
 
 function describeContact(facts: SiteFacts): string {
@@ -168,113 +149,246 @@ function describeSite(website: WebsiteDetail, page: PageView | null): string {
   return `Site pages (name -> slug): ${pages}\n${current}`;
 }
 
-function systemPrompt(website: WebsiteDetail, brief: GenerationBrief | null, context: CopilotContext): string {
-  return `You are the AI copilot inside the website editor of the business below. The website was generated by AI from the owner's business details, so every answer and every change must fit THIS business: its offer, customers, location and tone of voice. Focus on content that sells the business (headings, descriptions, services, offers, calls to action, FAQs, SEO) as much as on design.
+/** Instructions shared by every request; first in the prompt so the provider can cache them. */
+const INSTRUCTIONS = `You are the AI copilot inside the website editor of a small business. The website was generated by AI from the owner's business details, so every answer and every change must fit THIS business (see BUSINESS): its offer, customers, location and tone of voice. Focus on content that sells the business (headings, descriptions, services, offers, calls to action, FAQs, SEO) as much as on design.
+
+RESPOND IN JSON
+{
+  "intent": "chat" | "edit" | "look",
+  "reply": string,
+  "look": [sectionId, ...],
+  "imageSource": "library" | "generate" | "unspecified",
+  "imageSourceQuote": string,
+  "ops": [operation, ...],
+  "seo": { "title": up to 60 characters, "description": up to 155 characters } | null
+}
+- "chat": greetings, thanks, feedback, questions, advice, reviews or ideas. "reply" is your answer, in plain text without markdown (numbered lines are fine), with concrete suggestions specific to this business (you may propose exact copy). "ops" is empty.
+- "edit": the owner clearly asked for a change. "reply" is "". Don't tell the owner anything is done: the editor applies and checks each operation, then reports the ones that worked using their "note".
+- "look": you need the full content of sections you only have a summary of (e.g. to match, copy or compare with them) before you can answer or edit. List their ids in "look"; "reply" is "" and "ops" is empty. The editor sends their content and you answer again. Never describe, compare or match a section you've only seen summarized.
+When unsure whether a change is wanted, use "chat". If a request can't be done with the operations below (domain, publishing, other pages), use "chat" and explain where to do it in the editor. If you can't do what was asked, use "chat" and say why instead of making a different change.
+
+OPERATIONS (each has "note": one short sentence for the owner describing exactly what this operation changes)
+- { "op": "update", "note", "sectionId", "set": { "<path>": value }, "unset": ["<path>"] }
+  Changes only the listed fields of an existing section; everything else stays as it is. A path starts with "data." or "settings." and uses dots for nested fields and list positions, e.g. "data.heading", "data.items.2.title", "settings.customColors.primary". Setting a list position equal to the list length appends an item.
+  "unset" removes a field or a list item: removing a picture, button or item is an "unset" of its path (e.g. "unset": ["data.image"]). Never keep something the owner asked to remove.
+- { "op": "add", "note", "position": index in the page or null (before the footer), "section": { "type", "settings"?, "data" } }  with every required field.
+- { "op": "remove", "note", "sectionIds": [...] }
+- { "op": "move", "note", "sectionId", "toIndex" }
+- { "op": "replace_page", "note", "sections": [{ "type", "settings"?, "data" }] }  only when the owner explicitly asks to redesign, rebuild or start the page over; 3 to ${MAX_PAGE_SECTIONS} sections between the existing header and footer.
+Set "seo" when the page's main message changes, or when asked; otherwise null.
+Section types that can be created, removed or moved: ${GENERATED_SECTION_TYPES.join(", ")}. The header (site name, logo, menu, button) and footer can only be updated. FIELDS lists the types shown; if you use another type, the editor sends you its fields.
+
+IMAGES
+An IMAGE value is one of:
+- a library token, e.g. "IMAGE_1", or { "url": "IMAGE_1", "alt": "<alt text>" };
+- "GENERATE: <detailed description of a realistic photo for this business, no text or logos>" to create a new image with AI (at most ${MAX_GENERATED_IMAGES} per reply; saved to the owner's library);
+- an image URL already on the page.
+Never invent image URLs.
+"imageSource" records what the OWNER said, not your choice: "library" only if the owner's words pick the library or a library photo, "generate" only if the owner's words ask for a generated, AI-made or new image; otherwise "unspecified". "imageSourceQuote" is the owner's exact words that name the source, e.g. "generate one" or "from my library" ("" when unspecified). Still fill in the image with your best choice; the editor asks the owner where the image should come from when it's unspecified.
+
+RULES
+- Read each field's note: pick the field whose meaning matches the request (e.g. a picture behind the text is a different field from one beside it).
+- Colors: "settings.background" is a preset; a color the owner names goes in "settings.customColors.<role>" as a 6-digit hex.
+- To make a section match another, give it the other section's "settings.background" and the same "settings.customColors" (set the ones it has, unset the ones it doesn't). Over a photo background, a section matches by being transparent where its fields allow it.
+- Only say something is already done after comparing the actual values on the page; if they differ, it isn't done.
+- Write specific, credible, benefit-led copy for this business in its tone of voice. No lorem ipsum or generic filler.
+- Don't invent awards, certifications, exact statistics or prices the owner didn't give; testimonials and team members are placeholders the owner will replace.
+- Never invent contact details; use only the ones on file.
+- Links: only the site's page slugs or "#section" anchors.`;
+
+/** What the AI sees of the page: the section types whose fields it gets, and which sections it sees in full. */
+export type PromptScope = { types: EditableSectionType[]; fullIds: Set<string>; pageJson: string };
+
+export function promptScope(options: SiteCopilotOptions): PromptScope {
+  const editable = pageSections(options).filter((section) => isEditableSectionType(section.type));
+  const selected = selectedSection(options);
+  const summary = (section: SectionEnvelope) => ({
+    id: section.id,
+    type: section.type,
+    heading: [section.data.heading, section.data.siteName].find((value) => typeof value === "string") ?? "",
+  });
+  const full = ({ id, type, settings, data }: SectionEnvelope) => ({ id, type, settings, data });
+
+  let shown = selected && isEditableSectionType(selected.type) ? editable.filter((section) => section.id === selected.id) : editable;
+  const render = () => JSON.stringify(editable.map((section) => (shown.includes(section) ? full(section) : summary(section))));
+  let pageJson = render();
+  if (pageJson.length > MAX_PAGE_JSON_CHARS) {
+    shown = [];
+    pageJson = render();
+  }
+  const types = [...new Set(shown.map((section) => section.type as EditableSectionType))];
+  return {
+    types: types.length > 0 ? types : [...GENERATED_SECTION_TYPES],
+    fullIds: new Set(shown.map((section) => section.id)),
+    pageJson,
+  };
+}
+
+function systemPrompt(website: WebsiteDetail, brief: GenerationBrief | null, context: CopilotContext, scope: PromptScope): string {
+  return `${INSTRUCTIONS}
 
 BUSINESS
 ${describeFacts(context.facts, brief)}
-Contact details on file: ${describeContact(context.facts)}. Never invent other contact details.
+Contact details on file: ${describeContact(context.facts)}.
 
 SITE
 ${describeSite(website, context.page)}
 
-IMAGES
-${describeImages(context.clean.images)}
-Image URLs already used on the page may be kept as they are.
+LIBRARY
+${describeLibrary(context.clean.images, context.clean.keepUrls ?? new Set())}
 
-Choose exactly one intent:
-- "chat": questions, advice, reviews or ideas. Answer in "chatReply" with concrete suggestions specific to this business (you may propose exact copy). Nothing on the page changes.
-- "edit_section": change the selected section (only when one is selected). Return "section": { "settings"?, "data" } with the complete updated data; keep fields you don't change.
-- "add_section": add one new section. Return "section": { "type", "settings", "data" }.
-- "rewrite_page": change wording or content across the current page while keeping its layout. Return "sections": one entry per section you change: { "id", "data" } with complete updated data. Keep variants, images and structure unless asked.
-- "redesign_page": rebuild the current page with 3 to ${MAX_REDESIGN_SECTIONS} new sections. Return "sections": [{ "type", "settings", "data" }].
-- "update_seo": only the page's SEO.
-With "rewrite_page", "redesign_page" and "update_seo" (and "edit_section" when the page's main message changes) also return "seo": { "title": up to 60 characters, "description": up to 155 characters } for the current page.
-
-Rules:
-- Write specific, credible, benefit-led copy for this business in its tone of voice. No lorem ipsum or generic filler.
-- Don't invent awards, certifications, exact statistics or prices the owner didn't give; testimonials and team members are placeholders the owner will replace.
-- Links: only the page slugs above or "#section" anchors.
-- Section types you can create or edit: ${GENERATED_SECTION_TYPES.join(", ")}. Header, footer and other sections can't be changed here.
-- If a request can't be done with these intents (e.g. the header menu, domain, publishing), use "chat" and explain where to do it in the editor.
-- "summary": one short sentence telling the owner what you changed.
-${SECTION_GUIDE}
-Respond in JSON: { "intent", "summary", "chatReply"?, "section"?, "sections"?, "seo"? }`;
+FIELDS (only these exist)
+${describeCatalog(scope.types)}`;
 }
 
-function pageForPrompt(sections: SectionEnvelope[]): string {
-  const editable = sections.filter((section) => isGeneratedSectionType(section.type));
-  const full = JSON.stringify(
-    editable.map(({ id, type, settings, data }) => ({ id, type, settings: { background: settings.background }, data })),
-  );
-  if (full.length <= MAX_PAGE_JSON_CHARS) return full;
-  return JSON.stringify(
-    editable.map(({ id, type, data }) => ({ id, type, heading: typeof data.heading === "string" ? data.heading : "" })),
-  );
-}
-
-function userPrompt(options: SiteCopilotOptions, selected: SectionEnvelope | null): string {
-  const sections = options.currentSections ?? [];
-  const others = sections.filter((section) => !isGeneratedSectionType(section.type)).map((section) => section.type);
+function userPrompt(options: SiteCopilotOptions, scope: PromptScope): string {
+  const selected = selectedSection(options);
+  const others = pageSections(options)
+    .filter((section) => !isEditableSectionType(section.type))
+    .map((section) => section.type);
   const selection = selected
-    ? `Selected section: ${JSON.stringify({ id: selected.id, type: selected.type, settings: selected.settings, data: selected.data })}`
+    ? `Selected section (the owner means this one unless they say otherwise): ${selected.id} (${selected.type})`
     : "Selected section: none (whole page)";
+  const issues = pageSections(options)
+    .filter((section) => scope.fullIds.has(section.id))
+    .flatMap((section) => sectionIssues(section).map((issue) => `- ${section.id} (${section.type}): ${issue.message}`));
   return `Owner's request: ${options.prompt}
 
 ${selection}
-Current page sections you can change: ${pageForPrompt(sections)}
-Other sections on the page: ${others.length > 0 ? others.join(", ") : "none"}`;
+Page sections you can change, in order (sections with only a heading are summarized): ${scope.pageJson}
+Other sections on the page: ${others.length > 0 ? others.join(", ") : "none"}${
+    issues.length > 0 ? `\nAlready on the page but not shown to visitors (fix when it matters for the request):\n${issues.join("\n")}` : ""
+  }`;
 }
 
 function buildMessages(options: SiteCopilotOptions, system: string, user: string): ChatMessage[] {
-  const history = (options.history ?? []).slice(-10).map((item) => ({ role: item.role, content: item.content.slice(0, 3000) }));
+  const past = options.history ?? [];
+  // The editor's history already ends with this request, which is sent below with the page context.
+  const last = past.at(-1);
+  const earlier = last?.role === "user" && last.content.trim() === options.prompt.trim() ? past.slice(0, -1) : past;
+  const history = earlier.slice(-10).map((item) => ({ role: item.role, content: item.content.slice(0, 3000) }));
   return [{ role: "system", content: system }, ...history, { role: "user", content: user }];
 }
 
-function noChange(): AppError {
-  return new AppError(502, "The AI couldn't produce a valid change for that. Try rephrasing your request.", "AI_NO_CHANGES");
+/** Problems to fix, plus the fields and content of any section types or sections the AI hadn't seen yet. */
+function repairPrompt(errors: string[], reply: EditReply, options: SiteCopilotOptions, scope: PromptScope): string {
+  const sections = pageSections(options);
+  const types = new Set<EditableSectionType>();
+  const unseen: SectionEnvelope[] = [];
+  for (const op of reply.ops) {
+    if (op.op === "update") {
+      const section = sections.find((candidate) => candidate.id === op.sectionId);
+      if (section && isEditableSectionType(section.type)) {
+        types.add(section.type);
+        if (!scope.fullIds.has(section.id) && !unseen.includes(section)) unseen.push(section);
+      }
+    } else if (op.op === "add" && isGeneratedSectionType(op.section.type)) {
+      types.add(op.section.type);
+    } else if (op.op === "replace_page") {
+      for (const draft of op.sections) if (isGeneratedSectionType(draft.type)) types.add(draft.type);
+    }
+  }
+  const newTypes = [...types].filter((type) => !scope.types.includes(type));
+  const extra = [
+    newTypes.length > 0 ? `Fields of the other section types you used:\n${describeSectionTypes(newTypes)}` : "",
+    unseen.length > 0
+      ? `Current content of the sections you changed: ${JSON.stringify(unseen.map(({ id, type, settings, data }) => ({ id, type, settings, data })))}`
+      : "",
+  ].filter(Boolean);
+  return `These parts of your reply can't be applied:
+${errors.slice(0, 20).map((error) => `- ${error}`).join("\n")}
+${extra.length > 0 ? `\n${extra.join("\n\n")}\n` : ""}
+Return the complete corrected JSON reply (all operations, not only the fixed ones). Use only paths and values that exist in the fields.`;
 }
 
-export class AiSiteCopilotService {
-  async generate(options: SiteCopilotOptions): Promise<AiSuggestionPayload> {
-    const { website } = options;
-    const selected = options.scope === "section" && options.currentSection ? options.currentSection : null;
-
-    const [generation, { apiKey, model }] = await Promise.all([
-      prisma.websiteGeneration.findUnique({ where: { websiteId: website.id }, select: { input: true } }),
-      aiSettingsService.getCredentials(website.clientId),
-    ]);
-    if (!apiKey) {
-      throw new AppError(503, "The AI assistant isn't available yet. Ask the administrator to set it up.", "AI_NOT_CONFIGURED");
+/** The full content (and fields) of sections the AI asked to see, and the scope that now includes them. */
+function lookPrompt(ids: string[], options: SiteCopilotOptions, scope: PromptScope): { prompt: string; scope: PromptScope } {
+  const sections = pageSections(options).filter((section) => ids.includes(section.id) && isEditableSectionType(section.type));
+  const newTypes = [...new Set(sections.map((section) => section.type as EditableSectionType))].filter((type) => !scope.types.includes(type));
+  const content = JSON.stringify(sections.map(({ id, type, settings, data }) => ({ id, type, settings, data })));
+  return {
+    prompt: `${sections.length > 0 ? `Full content of the sections you asked for: ${content}` : "None of those ids are sections on this page."}${
+      newTypes.length > 0 ? `\n\nTheir fields:\n${describeSectionTypes(newTypes)}` : ""
     }
-    const run = createOpenAiJsonCompletion({
-      apiKey,
-      model,
-      clientId: website.clientId,
-      websiteId: website.id,
-      userId: options.userId,
-    });
 
-    const brief = (generation?.input as unknown as GenerationBrief | undefined) ?? null;
-    const images = await loadLibrary(website.clientId, brief?.mediaIds ?? []);
-    const context = buildCopilotContext(options, images);
+Now answer the owner's request with "chat" or "edit" (not "look").`,
+    scope: {
+      ...scope,
+      types: [...scope.types, ...newTypes],
+      fullIds: new Set([...scope.fullIds, ...sections.map((section) => section.id)]),
+    },
+  };
+}
 
-    const raw = await run({
-      messages: buildMessages(options, systemPrompt(website, brief, context), userPrompt(options, selected)),
-      maxTokens: 8000,
-      temperature: 0.7,
-      scope: "site_copilot",
-    });
-    return toCopilotSuggestion(options, raw, context);
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/** The owner-facing line for one operation: the AI's note, or a plain description of the operation. */
+function describeOp(op: EditOp, sections: SectionEnvelope[]): string {
+  if (op.note?.trim()) return sentence(op.note);
+  const typeOf = (id: string) => sections.find((section) => section.id === id)?.type ?? "a";
+  switch (op.op) {
+    case "update":
+      return `Updated the ${typeOf(op.sectionId)} section.`;
+    case "add":
+      return `Added a ${op.section.type} section.`;
+    case "remove":
+      return op.sectionIds.length === 1 ? `Removed the ${typeOf(op.sectionIds[0]!)} section.` : `Removed ${op.sectionIds.length} sections.`;
+    case "move":
+      return `Moved the ${typeOf(op.sectionId)} section.`;
+    case "replace_page":
+      return `Rebuilt the page with ${op.sections.length} sections.`;
   }
+}
+
+/**
+ * What the suggestion really does, written after the operations were applied and checked:
+ * only applied operations are reported as done, and the ones that failed are named.
+ */
+function describeResult(attempt: Attempt, sections: SectionEnvelope[], seo: boolean, generatedImages: number): string {
+  const done = attempt.compiled.outcomes.filter((outcome) => outcome.applied).map((outcome) => describeOp(outcome.op, sections));
+  const failed = [
+    ...attempt.compiled.outcomes.filter((outcome) => !outcome.applied).map((outcome) => describeOp(outcome.op, sections)),
+    ...attempt.droppedNotes.map(sentence),
+  ].map((text) => `"${text.replace(/[.!?]$/, "")}"`);
+  return [
+    ...done,
+    seo ? SEO_NOTE : "",
+    generatedImages > 0 ? SAVED_IMAGE_NOTE : "",
+    failed.length > 0 ? `I couldn't apply ${failed.length === 1 ? "this change" : "these changes"}: ${failed.join(", ")}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** The page the edits apply to; the selected section is always part of it. */
+function pageSections(options: SiteCopilotOptions): SectionEnvelope[] {
+  const sections = options.currentSections ?? [];
+  const selected = selectedSection(options);
+  return selected && !sections.some((section) => section.id === selected.id) ? [...sections, selected] : sections;
+}
+
+function selectedSection(options: SiteCopilotOptions): SectionEnvelope | null {
+  return options.scope === "section" && options.currentSection ? options.currentSection : null;
+}
+
+function parseSeo(seo: EditReply["seo"], page: PageView | null): AiSuggestionPayload["seo"] {
+  if (!page || !seo) return undefined;
+  const seoTitle = seo.title.trim();
+  const seoDescription = seo.description.trim();
+  if (!seoTitle && !seoDescription) return undefined;
+  const next = { seoTitle: seoTitle || page.seoTitle || "", seoDescription: seoDescription || page.seoDescription || "" };
+  if (next.seoTitle === (page.seoTitle ?? "") && next.seoDescription === (page.seoDescription ?? "")) return undefined;
+  return { pageId: page.id, ...next };
 }
 
 export function buildCopilotContext(options: SiteCopilotOptions, images: BriefImage[]): CopilotContext {
   const { website } = options;
   const keepUrls = new Set<string>();
   const keepHrefs = new Set<string>();
-  collectExisting(options.currentSections ?? [], keepUrls, keepHrefs);
-  if (options.currentSection) collectExisting(options.currentSection, keepUrls, keepHrefs);
+  collectExisting(pageSections(options), keepUrls, keepHrefs);
 
   const pages = website.draft.pages;
   const contactPage = pages.find((candidate) => candidate.pageType === PageType.CONTACT);
@@ -291,67 +405,170 @@ export function buildCopilotContext(options: SiteCopilotOptions, images: BriefIm
   };
 }
 
-/** Turns the AI reply into a reviewable suggestion; every section goes through the same clean-up as AI builds. */
-export function toCopilotSuggestion(options: SiteCopilotOptions, raw: unknown, context: CopilotContext): AiSuggestionPayload {
-  const selected = options.scope === "section" && options.currentSection ? options.currentSection : null;
-  const reply = isRecord(raw) ? raw : {};
-  const intent: Intent = (INTENTS as readonly string[]).includes(reply.intent as string) ? (reply.intent as Intent) : "chat";
-  const summary = str(reply.summary, 300) || "Here's my suggestion.";
-  const seo = parseSeo(reply.seo, context.page);
-  const sections = options.currentSections ?? [];
-  const base = { id: randomUUID(), prompt: options.prompt, summary };
-  const chat = (text: string): AiSuggestionPayload => ({
-    ...base,
-    chatReply: text || summary,
-    target: { scope: "chat" },
-    before: [],
-    after: [],
-  });
+type Attempt = { reply: EditReply; compiled: CompiledEdits; errors: string[]; droppedNotes: string[] };
 
-  switch (intent) {
-    case "edit_section": {
-      if (!selected) return chat(str(reply.chatReply, 4000));
-      const updated = mergeSection(selected, reply.section, context);
-      if (!updated) throw noChange();
-      return { ...base, target: { scope: "section", sectionId: selected.id }, before: [selected], after: [updated], seo };
+function check(raw: unknown, options: SiteCopilotOptions, context: CopilotContext, generated?: Map<string, BriefImage>): Attempt {
+  const { reply, errors, droppedNotes } = parseEditReply(raw);
+  const compiled = compileEdits(reply.ops, {
+    sections: pageSections(options),
+    facts: context.facts,
+    clean: context.clean,
+    generated,
+    maxGeneratedImages: MAX_GENERATED_IMAGES,
+  });
+  const problems = [...errors, ...compiled.errors];
+  if (reply.intent === "edit" && reply.ops.length === 0 && !reply.seo) {
+    problems.push('"intent" is "edit" but "ops" is empty: add the operations that make the change');
+  }
+  const claimedSource = reply.imageSource !== "unspecified" && !answeredImageSource(options);
+  if (compiled.newImages && claimedSource && !ownerSaid(options, reply.imageSource, reply.imageSourceQuote)) {
+    problems.push(
+      `"imageSource" is "${reply.imageSource}" but "imageSourceQuote" isn't the owner's exact words; copy the words where the owner chose it, or use "unspecified"`,
+    );
+  }
+  return { reply, compiled, errors: problems, droppedNotes };
+}
+
+function chatPayload(options: SiteCopilotOptions, text: string): AiSuggestionPayload {
+  const reply = text.trim() || "I'm not sure what to change. Could you tell me a bit more?";
+  return { id: randomUUID(), prompt: options.prompt, summary: reply, chatReply: reply, target: { scope: "chat" }, before: [], after: [] };
+}
+
+/** With photos in the library, the owner picks between a library photo and a new AI image first. */
+function imageSourceQuestion(options: SiteCopilotOptions, attempt: Attempt, context: CopilotContext): AiSuggestionPayload | null {
+  const library = context.clean.images;
+  if (library.length === 0 || !attempt.compiled.newImages) return null;
+  const { imageSource, imageSourceQuote } = attempt.reply;
+  if (ownerSaid(options, imageSource, imageSourceQuote) || answeredImageSource(options)) return null;
+  const suggestions = library.slice(0, 3).map((image) => `- ${image.alt || image.fileName}`);
+  return {
+    ...chatPayload(options, IMAGE_SOURCE_QUESTION),
+    chatReply: `${IMAGE_SOURCE_QUESTION}\n\nPhotos in your library that could work:\n${suggestions.join("\n")}\n\nReply "library" (or name a photo) or "generate".`,
+  };
+}
+
+/** Turns checked edits into a reviewable suggestion. */
+export function toCopilotSuggestion(
+  options: SiteCopilotOptions,
+  attempt: Attempt,
+  context: CopilotContext,
+  generatedImages = 0,
+): AiSuggestionPayload {
+  const { reply, compiled } = attempt;
+  const seo = parseSeo(reply.seo, context.page);
+  const sections = pageSections(options);
+  if (compiled.ops.length === 0 && !seo) {
+    const failed = describeResult(attempt, sections, false, 0);
+    return chatPayload(
+      options,
+      failed ? `${failed} Try describing it differently.` : "I couldn't make that change on this page. Try describing it differently.",
+    );
+  }
+
+  const base = { id: randomUUID(), prompt: options.prompt, summary: describeResult(attempt, sections, Boolean(seo), generatedImages), seo };
+  const selected = selectedSection(options);
+  const onlySelected =
+    selected !== null && compiled.ops.length > 0 && compiled.ops.every((op) => op.op === "update" && op.section.id === selected.id);
+  if (onlySelected) {
+    const updated = compiled.after.find((section) => section.id === selected.id)!;
+    return { ...base, target: { scope: "section", sectionId: selected.id }, before: [selected], after: [updated] };
+  }
+  return {
+    ...base,
+    target: compiled.rebuild ? { scope: "page", rebuild: true } : { scope: "page", rebuild: false, focusSectionId: compiled.changedIds[0] },
+    before: sections,
+    after: compiled.after,
+  };
+}
+
+/**
+ * One copilot turn: ask, check the edits (one repair round with the problems found), confirm the
+ * image source, create requested images, and build the suggestion.
+ */
+export async function runCopilot(
+  options: SiteCopilotOptions,
+  context: CopilotContext,
+  messages: ChatMessage[],
+  ask: JsonAsk,
+  createImage: ImageCreator,
+  scope: PromptScope = promptScope(options),
+): Promise<AiSuggestionPayload> {
+  let raw = await ask(messages);
+  let attempt = check(raw, options, context);
+  if (attempt.reply.intent === "look") {
+    const looked = lookPrompt(attempt.reply.look, options, scope);
+    messages = [...messages, { role: "assistant", content: JSON.stringify(raw) }, { role: "user", content: looked.prompt }];
+    scope = looked.scope;
+    raw = await ask(messages);
+    attempt = check(raw, options, context);
+    if (attempt.reply.intent === "look") return chatPayload(options, attempt.reply.reply);
+  }
+  if (attempt.reply.intent === "edit" && attempt.errors.length > 0) {
+    raw = await ask([
+      ...messages,
+      { role: "assistant", content: JSON.stringify(raw) },
+      { role: "user", content: repairPrompt(attempt.errors, attempt.reply, options, scope) },
+    ]);
+    const repaired = check(raw, options, context);
+    if (repaired.reply.intent === "chat" || repaired.errors.length <= attempt.errors.length) attempt = repaired;
+  }
+  if (attempt.reply.intent === "chat") return chatPayload(options, attempt.reply.reply);
+
+  const question = imageSourceQuestion(options, attempt, context);
+  if (question) return question;
+
+  const needs = attempt.compiled.imageNeeds.slice(0, MAX_GENERATED_IMAGES);
+  if (needs.length === 0) return toCopilotSuggestion(options, attempt, context);
+
+  const created = await Promise.all(needs.map((need) => createImage(need.description, need.shape)));
+  context.clean.images.push(...created);
+  const generated = new Map(needs.map((need, index) => [need.description, created[index]!]));
+  return toCopilotSuggestion(options, check(raw, options, context, generated), context, created.length);
+}
+
+export class AiSiteCopilotService {
+  async generate(options: SiteCopilotOptions): Promise<AiSuggestionPayload> {
+    const { website } = options;
+
+    const [generation, { apiKey, model }] = await Promise.all([
+      prisma.websiteGeneration.findUnique({ where: { websiteId: website.id }, select: { input: true } }),
+      aiSettingsService.getCredentials(website.clientId),
+    ]);
+    if (!apiKey) {
+      throw new AppError(503, "The AI assistant isn't available yet. Ask the administrator to set it up.", "AI_NOT_CONFIGURED");
     }
-    case "add_section": {
-      const created = newSection(reply.section, context);
-      if (!created) throw noChange();
-      const footerIdx = sections.findIndex((section) => section.type === "footer");
-      const insertAt = footerIdx === -1 ? sections.length : footerIdx;
-      const after = [...sections.slice(0, insertAt), created, ...sections.slice(insertAt)];
-      return { ...base, target: { scope: "page", rebuild: false, focusSectionId: created.id }, before: sections, after, seo };
-    }
-    case "rewrite_page": {
-      const entries = Array.isArray(reply.sections) ? reply.sections.filter(isRecord) : [];
-      let changed = 0;
-      let focusSectionId: string | undefined;
-      const after = sections.map((section) => {
-        const entry = entries.find((candidate) => candidate.id === section.id);
-        const updated = entry ? mergeSection(section, entry, context) : null;
-        if (!updated || JSON.stringify(updated) === JSON.stringify(section)) return section;
-        changed++;
-        focusSectionId ??= updated.id;
-        return updated;
-      });
-      if (changed === 0 && !seo) throw noChange();
-      return { ...base, target: { scope: "page", rebuild: false, focusSectionId }, before: sections, after, seo };
-    }
-    case "redesign_page": {
-      const rawSections = Array.isArray(reply.sections) ? reply.sections.slice(0, MAX_REDESIGN_SECTIONS) : [];
-      const body = rawSections.map((item) => newSection(item, context)).filter((item): item is SectionEnvelope => item !== null);
-      if (body.length === 0) throw noChange();
-      const headers = sections.filter((section) => section.type === "header");
-      const footers = sections.filter((section) => section.type === "footer");
-      return { ...base, target: { scope: "page", rebuild: true }, before: sections, after: [...headers, ...body, ...footers], seo };
-    }
-    case "update_seo": {
-      if (!seo) return chat(str(reply.chatReply, 4000));
-      return { ...base, target: { scope: "page", rebuild: false }, before: sections, after: sections, seo };
-    }
-    default:
-      return chat(str(reply.chatReply, 4000));
+    const run = createOpenAiJsonCompletion({ apiKey, model, clientId: website.clientId, websiteId: website.id, userId: options.userId });
+    const generateImage = createOpenAiImageGenerator(
+      { apiKey, clientId: website.clientId, websiteId: website.id, userId: options.userId },
+      "site_copilot_image",
+    );
+
+    const brief = (generation?.input as unknown as GenerationBrief | undefined) ?? null;
+    const images = await loadLibrary(website.clientId, brief?.mediaIds ?? []);
+    const context = buildCopilotContext(options, images);
+    const scope = promptScope(options);
+    const messages = buildMessages(options, systemPrompt(website, brief, context, scope), userPrompt(options, scope));
+
+    return runCopilot(
+      options,
+      context,
+      messages,
+      (conversation) =>
+        run({ messages: conversation, maxTokens: 8000, temperature: 0.4, scope: "site_copilot", signal: options.signal }),
+      async (description, shape) => {
+        const buffer = await generateImage({ description, shape, signal: options.signal });
+        const file = await mediaService.storeGeneratedImage({
+          clientId: website.clientId,
+          websiteId: website.id,
+          userId: options.userId,
+          buffer,
+          fileName: `ai-${description.slice(0, 60).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "image"}.jpg`,
+          altText: altFromDescription(description),
+        });
+        return toBriefImage(file);
+      },
+      scope,
+    );
   }
 }
 
