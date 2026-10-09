@@ -251,6 +251,15 @@ export type HeaderData = {
   tagline?: string;
   statusText?: string;
   statusColor?: "green" | "blue" | "orange" | "purple" | string;
+  menuLabel?: string;
+  contactLabel?: string;
+  contactEmail?: string;
+  featured?: {
+    badge?: string;
+    title: string;
+    description?: string;
+    link?: LinkRef;
+  };
 };
 
 export type FooterNewsletter = {

@@ -1,5 +1,6 @@
 import Joi from "joi";
 import {
+  BRAND_DISPLAY_MODES,
   BUTTON_STYLES,
   CARD_STYLES,
   CUSTOM_ALIGNS,
@@ -64,6 +65,7 @@ const menuItem = Joi.object({
     .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
   badge: optionalText(30),
   icon: optionalText(40),
+  description: optionalText(140),
   children: Joi.array().items(subMenuItem).max(24).optional(),
 });
 
@@ -228,6 +230,9 @@ export const headerSchema = Joi.object({
   }),
   siteName: text(120).default("Brand").optional(),
   logo: image.optional(),
+  logoDisplay: Joi.string()
+    .valid(...BRAND_DISPLAY_MODES)
+    .optional(),
   menu: Joi.array().items(menuItem).max(24).default([]).optional(),
   cta: link.optional(),
   secondaryCta: link.optional(),
@@ -249,6 +254,15 @@ export const headerSchema = Joi.object({
   tagline: optionalText(120),
   statusText: optionalText(80),
   statusColor: optionalText(50),
+  menuLabel: optionalText(30),
+  contactLabel: optionalText(60),
+  contactEmail: Joi.string().trim().email().max(255).allow("").optional(),
+  featured: Joi.object({
+    badge: optionalText(30),
+    title: text(80).required(),
+    description: optionalText(200),
+    link: link.optional(),
+  }).optional(),
 });
 
 export const footerSchema = Joi.object({
