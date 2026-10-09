@@ -83,6 +83,17 @@ const image = Joi.object({
 
 const color = Joi.string().pattern(HEX_COLOR).required().messages({ "string.pattern.base": "Use a #rrggbb color" });
 
+const carouselSlide = Joi.object({
+  title: text(120).required(),
+  subtitle: optionalText(120),
+  description: optionalText(600),
+  caption: optionalText(300),
+  badge: optionalText(60),
+  image: image.optional(),
+  button: link.optional(),
+  secondaryButton: link.optional(),
+});
+
 /** Deepest container nesting (1 = flat list of leaf blocks) and total block count. */
 export function measureCustomBlocks(blocks: readonly CustomBlock[]): { depth: number; count: number } {
   let depth = 0;
@@ -495,6 +506,11 @@ export const heroSchema = Joi.object({
       .max(8)
       .optional(),
   }).optional(),
+  carouselSpeed: Joi.number().min(5).max(200).optional(),
+  carouselDirection: Joi.string().valid("left-to-right", "right-to-left").optional(),
+  showDoodles: Joi.boolean().optional(),
+  curveIntensity: Joi.string().valid("none", "subtle", "medium", "dramatic").optional(),
+  carouselSlides: Joi.array().items(carouselSlide).max(20).optional(),
 });
 
 const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
@@ -835,6 +851,7 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
         "image-gallery",
         "image-strip",
         "image-coverflow",
+        "curved-banner",
       ],
       "cards",
       { "hero": "hero-slider", "gallery": "image-gallery", "strip": "image-strip", "coverflow": "image-coverflow" },
@@ -844,18 +861,7 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     intro: optionalText(500),
     badge: optionalText(80),
     slides: Joi.array()
-      .items(
-        Joi.object({
-          title: text(120).required(),
-          subtitle: optionalText(120),
-          description: optionalText(600),
-          caption: optionalText(300),
-          badge: optionalText(60),
-          image: image.optional(),
-          button: link.optional(),
-          secondaryButton: link.optional(),
-        }),
-      )
+      .items(carouselSlide)
       .min(1)
       .max(12)
       .required(),

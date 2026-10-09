@@ -93,6 +93,7 @@ export const HERO_VARIANTS = [
   "minimal-typography",
   "floating-cards",
   "asymmetric",
+  "curved-carousel",
 ] as const;
 export const SECTION_BACKGROUNDS = ["default", "surface", "primary", "dark"] as const;
 export const SECTION_SPACINGS = ["none", "compact", "default", "relaxed"] as const;
@@ -388,6 +389,17 @@ export type HeroTrustedBy = {
   logos?: { label: string; url?: string }[];
 };
 
+export type CarouselSlide = {
+  title: string;
+  subtitle?: string;
+  description?: string;
+  caption?: string;
+  badge?: string;
+  image?: ImageRef;
+  button?: LinkRef;
+  secondaryButton?: LinkRef;
+};
+
 export type HeroData = {
   variant: (typeof HERO_VARIANTS)[number];
   eyebrow?: string;
@@ -421,6 +433,11 @@ export type HeroData = {
   rating?: HeroRating;
   floatingCards?: HeroFloatingCard[];
   trustedBy?: HeroTrustedBy;
+  carouselSpeed?: number;
+  carouselDirection?: "left-to-right" | "right-to-left";
+  showDoodles?: boolean;
+  curveIntensity?: "none" | "subtle" | "medium" | "dramatic";
+  carouselSlides?: CarouselSlide[];
 };
 
 export type SectionDataMap = {
@@ -631,21 +648,13 @@ export type SectionDataMap = {
       | "minimal-editorial"
       | "image-gallery"
       | "image-strip"
-      | "image-coverflow";
+      | "image-coverflow"
+      | "curved-banner";
     eyebrow?: string;
     heading?: string;
     intro?: string;
     badge?: string;
-    slides: {
-      title: string;
-      subtitle?: string;
-      description?: string;
-      caption?: string;
-      badge?: string;
-      image?: ImageRef;
-      button?: LinkRef;
-      secondaryButton?: LinkRef;
-    }[];
+    slides: CarouselSlide[];
     autoPlay?: boolean;
     interval?: number;
     showArrows?: boolean;
