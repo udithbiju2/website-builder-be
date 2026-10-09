@@ -165,6 +165,22 @@ export const customDataSchema = Joi.object({
   });
 const columns = Joi.number().valid(1, 2, 3, 4);
 
+function flexibleVariant<T extends string>(
+  validVariants: readonly T[],
+  defaultVariant: T,
+  aliasMap: Record<string, T> = {},
+) {
+  return Joi.string()
+    .custom((value) => {
+      if (!value) return defaultVariant;
+      if (aliasMap[value]) return aliasMap[value];
+      if ((validVariants as readonly string[]).includes(value)) return value;
+      return defaultVariant;
+    })
+    .default(defaultVariant)
+    .optional();
+}
+
 export const themeSchema = Joi.object({
   colors: Joi.object({
     primary: color,
@@ -198,10 +214,10 @@ export const themeSchema = Joi.object({
 });
 
 export const headerSchema = Joi.object({
-  design: Joi.string()
-    .valid(...HEADER_DESIGNS)
-    .default("logo-left")
-    .optional(),
+  design: flexibleVariant(HEADER_DESIGNS, "logo-left", {
+    "logo_left": "logo-left",
+    "center": "centered",
+  }),
   siteName: text(120).default("Brand").optional(),
   logo: image.optional(),
   menu: Joi.array().items(menuItem).max(24).default([]).optional(),
@@ -222,10 +238,10 @@ export const headerSchema = Joi.object({
 });
 
 export const footerSchema = Joi.object({
-  design: Joi.string()
-    .valid(...FOOTER_DESIGNS)
-    .default("columns")
-    .optional(),
+  design: flexibleVariant(FOOTER_DESIGNS, "columns", {
+    "col": "columns",
+    "simple-footer": "simple",
+  }),
   siteName: text(120).required(),
   logo: image.optional(),
   tagline: optionalText(200),
@@ -268,10 +284,10 @@ export const footerSchema = Joi.object({
 });
 
 export const heroSchema = Joi.object({
-  variant: Joi.string()
-    .valid(...HERO_VARIANTS)
-    .default("centered")
-    .optional(),
+  variant: flexibleVariant(HERO_VARIANTS, "centered", {
+    "split-screen": "split",
+    "cards": "floating-cards",
+  }),
   eyebrow: optionalText(200),
   badgeIcon: optionalText(50),
   heading: optionalText(200),
@@ -338,7 +354,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     eyebrow: optionalText(100),
     heading: text(200).required(),
     intro: optionalText(500),
-    variant: Joi.string().valid("grid", "split", "pastel-icons", "minimal", "cards").optional(),
+    variant: flexibleVariant(
+      ["grid", "split", "pastel-icons", "minimal", "cards"],
+      "grid",
+      { "cards-grid": "cards", "icons": "pastel-icons" },
+    ),
     iconStyle: Joi.string().valid("pastel-circle", "square-badge", "minimal-accent", "colored-circle", "none").optional(),
     cardStyle: Joi.string().valid("transparent", "surface", "bordered", "glass").optional(),
     align: Joi.string().valid("left", "center").optional(),
@@ -369,16 +389,18 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     heading: text(200).required(),
     eyebrow: optionalText(100),
     intro: optionalText(500),
-    variant: Joi.string()
-      .valid(
+    variant: flexibleVariant(
+      [
         "cards-grid",
         "bento-grid",
         "split-showcase",
         "interactive-list",
         "horizontal-cards",
         "minimal-numbered",
-      )
-      .optional(),
+      ],
+      "cards-grid",
+      { "bento": "bento-grid", "cards": "cards-grid", "split": "split-showcase" },
+    ),
     cardStyle: Joi.string()
       .valid("surface", "bordered", "flat", "glass", "glow", "elevated", "gradient")
       .optional(),
@@ -432,9 +454,17 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   faq: Joi.object({
-    variant: Joi.string()
-      .valid("accordion-classic", "two-column-grid", "split-sidebar", "minimal-numbered", "categorized-cards")
-      .optional(),
+    variant: flexibleVariant(
+      [
+        "accordion-classic",
+        "two-column-grid",
+        "split-sidebar",
+        "minimal-numbered",
+        "categorized-cards",
+      ],
+      "accordion-classic",
+      { "accordion": "accordion-classic", "grid": "two-column-grid", "split": "split-sidebar", "minimal": "minimal-numbered" },
+    ),
     eyebrow: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
@@ -461,9 +491,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   cta: Joi.object({
-    variant: Joi.string()
-      .valid("centered-card", "split-visual", "floating-card", "minimal-editorial")
-      .optional(),
+    variant: flexibleVariant(
+      ["centered-card", "split-visual", "floating-card", "minimal-editorial"],
+      "centered-card",
+      { "centered": "centered-card", "split": "split-visual", "floating": "floating-card", "minimal": "minimal-editorial" },
+    ),
     eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
@@ -481,9 +513,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     align: Joi.string().valid("left", "center").optional(),
   }),
   contact: Joi.object({
-    variant: Joi.string()
-      .valid("split-form", "cards-hub", "minimal-editorial", "floating-glass")
-      .optional(),
+    variant: flexibleVariant(
+      ["split-form", "cards-hub", "minimal-editorial", "floating-glass"],
+      "split-form",
+      { "split": "split-form", "cards": "cards-hub", "minimal": "minimal-editorial", "floating": "floating-glass" },
+    ),
     eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
@@ -545,9 +579,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   pricing: Joi.object({
-    variant: Joi.string()
-      .valid("cards-grid", "minimal-monochrome", "spotlight-tier", "horizontal-rows")
-      .optional(),
+    variant: flexibleVariant(
+      ["cards-grid", "minimal-monochrome", "spotlight-tier", "horizontal-rows"],
+      "cards-grid",
+      { "cards": "cards-grid", "minimal": "minimal-monochrome", "spotlight": "spotlight-tier", "horizontal": "horizontal-rows" },
+    ),
     eyebrow: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
@@ -593,9 +629,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     width: Joi.string().valid("contained", "wide").required(),
   }),
   team: Joi.object({
-    variant: Joi.string()
-      .valid("grid-cards", "spotlight-featured", "minimal-editorial", "glass-overlay")
-      .optional(),
+    variant: flexibleVariant(
+      ["grid-cards", "spotlight-featured", "minimal-editorial", "glass-overlay"],
+      "grid-cards",
+      { "grid": "grid-cards", "spotlight": "spotlight-featured", "minimal": "minimal-editorial", "glass": "glass-overlay" },
+    ),
     eyebrow: optionalText(80),
     badge: optionalText(80),
     heading: text(200).required(),
@@ -637,8 +675,8 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   carousel: Joi.object({
-    variant: Joi.string()
-      .valid(
+    variant: flexibleVariant(
+      [
         "cards",
         "hero-slider",
         "showcase",
@@ -646,8 +684,10 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
         "image-gallery",
         "image-strip",
         "image-coverflow",
-      )
-      .optional(),
+      ],
+      "cards",
+      { "hero": "hero-slider", "gallery": "image-gallery", "strip": "image-strip", "coverflow": "image-coverflow" },
+    ),
     eyebrow: optionalText(80),
     heading: optionalText(200),
     intro: optionalText(500),
@@ -682,9 +722,20 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     align: Joi.string().valid("left", "center").optional(),
   }),
   marquee: Joi.object({
-    variant: Joi.string()
-      .valid("ticker-text", "cards-stream", "pill-badges", "dual-directional")
-      .optional(),
+    variant: flexibleVariant(
+      ["ticker-text", "cards-stream", "pill-badges", "dual-directional"],
+      "ticker-text",
+      {
+        "gradient-pill": "pill-badges",
+        "pills": "pill-badges",
+        "badges": "pill-badges",
+        "cards": "cards-stream",
+        "features": "cards-stream",
+        "dual": "dual-directional",
+        "two-way": "dual-directional",
+        "ticker": "ticker-text",
+      },
+    ),
     eyebrow: optionalText(80),
     heading: optionalText(200),
     intro: optionalText(500),

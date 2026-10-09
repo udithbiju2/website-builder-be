@@ -745,6 +745,184 @@ export function sanitizeSectionData(
       }
       break;
     }
+
+    case "marquee": {
+      const validMarqueeVariants = [
+        "ticker-text",
+        "cards-stream",
+        "pill-badges",
+        "dual-directional",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validMarqueeVariants.includes(data.variant)
+      ) {
+        if (
+          data.variant === "gradient-pill" ||
+          data.variant === "pills" ||
+          data.variant === "badges"
+        ) {
+          data.variant = "pill-badges";
+        } else if (data.variant === "cards" || data.variant === "features") {
+          data.variant = "cards-stream";
+        } else if (data.variant === "dual" || data.variant === "two-way") {
+          data.variant = "dual-directional";
+        } else {
+          data.variant = "ticker-text";
+        }
+      }
+      if (!Array.isArray(data.items) || data.items.length === 0) {
+        data.items = [
+          { text: "GLOBAL CLOUD SCALE" },
+          { text: "ENTERPRISE SECURITY", badge: "SOC2 TYPE II" },
+          { text: "AI & ML INTEGRATION" },
+          { text: "99.99% UPTIME SLA", badge: "GUARANTEED" },
+        ];
+      } else {
+        data.items = (data.items as any[]).map((item, idx) => ({
+          text:
+            typeof item?.text === "string" && item.text.trim()
+              ? item.text.trim()
+              : `Item ${idx + 1}`,
+          badge:
+            typeof item?.badge === "string" && item.badge.trim()
+              ? item.badge.trim()
+              : undefined,
+          icon: typeof item?.icon === "string" ? item.icon : undefined,
+          link: typeof item?.link === "string" ? item.link : undefined,
+          subtext:
+            typeof item?.subtext === "string" && item.subtext.trim()
+              ? item.subtext.trim()
+              : undefined,
+        }));
+      }
+      if (data.secondaryItems && Array.isArray(data.secondaryItems)) {
+        data.secondaryItems = (data.secondaryItems as any[]).map(
+          (item, idx) => ({
+            text:
+              typeof item?.text === "string" && item.text.trim()
+                ? item.text.trim()
+                : `Item ${idx + 1}`,
+            badge:
+              typeof item?.badge === "string" && item.badge.trim()
+                ? item.badge.trim()
+                : undefined,
+            icon: typeof item?.icon === "string" ? item.icon : undefined,
+            link: typeof item?.link === "string" ? item.link : undefined,
+            subtext:
+              typeof item?.subtext === "string" && item.subtext.trim()
+                ? item.subtext.trim()
+                : undefined,
+          }),
+        );
+      }
+      const validSpeeds = ["slow", "normal", "fast"];
+      if (data.speed && !validSpeeds.includes(data.speed as string)) {
+        data.speed = "normal";
+      }
+      const validDirections = ["left", "right"];
+      if (data.direction && !validDirections.includes(data.direction as string)) {
+        data.direction = "left";
+      }
+      const validFontSizes = ["small", "medium", "large", "huge"];
+      if (data.fontSize && !validFontSizes.includes(data.fontSize as string)) {
+        delete data.fontSize;
+      }
+      data.pauseOnHover = Boolean(data.pauseOnHover ?? true);
+      data.gradientFades = Boolean(data.gradientFades ?? true);
+      break;
+    }
+
+    case "contact": {
+      const validContactVariants = [
+        "split-form",
+        "cards-hub",
+        "minimal-editorial",
+        "floating-glass",
+      ];
+      if (
+        typeof data.variant !== "string" ||
+        !validContactVariants.includes(data.variant)
+      ) {
+        data.variant = "split-form";
+      }
+      if (!data.heading) data.heading = "Get in touch with us";
+      if (typeof data.showForm !== "boolean") data.showForm = true;
+      if (!data.submitLabel || typeof data.submitLabel !== "string") {
+        data.submitLabel = "Send Message";
+      }
+      break;
+    }
+
+    case "media": {
+      if (data.kind !== "image" && data.kind !== "video") {
+        data.kind = data.videoUrl ? "video" : "image";
+      }
+      const validAspects = ["16:9", "4:3", "1:1"];
+      if (!validAspects.includes(data.aspect as string)) {
+        data.aspect = "16:9";
+      }
+      const validWidths = ["contained", "wide"];
+      if (!validWidths.includes(data.width as string)) {
+        data.width = "contained";
+      }
+      break;
+    }
+
+    case "stats": {
+      if (!data.heading) data.heading = "Proven Impact & Scale";
+      if (!Array.isArray(data.items) || data.items.length === 0) {
+        data.items = [
+          { value: "99.99%", label: "Uptime Guaranteed" },
+          { value: "50M+", label: "Requests Processed" },
+          { value: "24/7", label: "Dedicated Support" },
+        ];
+      } else {
+        data.items = (data.items as any[]).map((item, idx) => ({
+          value:
+            typeof item?.value === "string" && item.value.trim()
+              ? item.value.trim()
+              : "100%",
+          label:
+            typeof item?.label === "string" && item.label.trim()
+              ? item.label.trim()
+              : `Metric ${idx + 1}`,
+        }));
+      }
+      break;
+    }
+
+    case "gallery": {
+      if (!data.columns || typeof data.columns !== "number") data.columns = 3;
+      if (!data.mobileColumns || typeof data.mobileColumns !== "number") {
+        data.mobileColumns = 1;
+      }
+      if (!Array.isArray(data.images)) data.images = [];
+      break;
+    }
+
+    case "logos": {
+      if (typeof data.grayscale !== "boolean") data.grayscale = true;
+      if (!Array.isArray(data.logos)) data.logos = [];
+      break;
+    }
+
+    case "split": {
+      if (!data.heading) data.heading = "Built for modern workflows";
+      if (typeof data.body !== "string") data.body = "";
+      if (!Array.isArray(data.bullets)) {
+        data.bullets = ["High performance architecture", "Enterprise-grade security"];
+      }
+      if (data.imagePosition !== "left" && data.imagePosition !== "right") {
+        data.imagePosition = "left";
+      }
+      break;
+    }
+
+    case "text": {
+      if (typeof data.body !== "string") data.body = "";
+      break;
+    }
   }
 
   return data;
@@ -793,7 +971,7 @@ VALID SECTION SCHEMAS & EXACT FIELD KEYS:
 7. "team":
    data: { "variant": "grid-cards"|"spotlight-featured"|"minimal-editorial"|"glass-overlay", "heading": "...", "intro": "...", "columns": 3, "members": [ { "name": "...", "role": "...", "bio": "...", "avatar": { "url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80", "alt": "Team Member" } } ] }
 8. "marquee":
-   data: { "variant": "gradient-pill", "speed": "normal", "direction": "left", "items": [ { "text": "...", "badge": "..." } ] }
+   data: { "variant": "ticker-text"|"cards-stream"|"pill-badges"|"dual-directional", "speed": "normal", "direction": "left", "items": [ { "text": "...", "badge": "..." } ] }
 9. "carousel":
    data: {
      "variant": "hero-slider"|"cards"|"showcase"|"minimal-editorial"|"image-gallery"|"image-strip"|"image-coverflow",
