@@ -62,6 +62,14 @@ export const HEADER_DESIGNS = [
   "ecommerce",
   "floating",
   "transparent",
+  "glass-dock",
+  "split-stacked",
+  "command-bar",
+  "mega-menu-grid",
+  "side-drawer",
+  "headline-ticker",
+  "luxury-editorial",
+  "saas-console",
 ] as const;
 export const FOOTER_DESIGNS = [
   "columns",
@@ -85,6 +93,7 @@ export const HERO_VARIANTS = [
   "minimal-typography",
   "floating-cards",
   "asymmetric",
+  "curved-carousel",
 ] as const;
 export const SECTION_BACKGROUNDS = ["default", "surface", "primary", "dark"] as const;
 export const SECTION_SPACINGS = ["none", "compact", "default", "relaxed"] as const;
@@ -135,8 +144,46 @@ export const SECTION_TYPES = [
   "team",
   "carousel",
   "marquee",
+  "auth",
   "custom",
 ] as const;
+
+export const AUTH_VARIANTS = [
+  "diagonal-split",
+  "gradient-spotlight",
+  "illustration-frame",
+  "glass-aurora",
+  "dark-wave",
+  "product-showcase",
+  "minimal-editorial",
+  "bento-grid",
+  "fullbleed-sheet",
+  "tabbed-compact",
+] as const;
+export const AUTH_VIEWS = ["login", "register", "forgot", "otp"] as const;
+export const AUTH_FIELD_TYPES = [
+  "text",
+  "email",
+  "password",
+  "confirm-password",
+  "tel",
+  "number",
+  "date",
+  "select",
+  "checkbox",
+] as const;
+export const AUTH_SOCIAL_PROVIDERS = ["google", "apple", "github", "facebook", "x", "linkedin", "microsoft"] as const;
+export const AUTH_ANIMATIONS = ["none", "fade", "slide-up", "slide-side", "scale", "blur"] as const;
+
+export type AuthField = {
+  name: string;
+  label: string;
+  type: (typeof AUTH_FIELD_TYPES)[number];
+  placeholder?: string;
+  required?: boolean;
+  width?: "full" | "half";
+  options?: string[];
+};
 
 /** Limits for free-form "custom" sections, which the AI composes from layout blocks. */
 export const CUSTOM_LIMITS = {
@@ -213,6 +260,7 @@ export type HeaderMenuItem = {
   href: string;
   badge?: string;
   icon?: string;
+  description?: string;
   children?: HeaderSubMenuItem[];
 };
 
@@ -236,6 +284,21 @@ export type HeaderData = {
   currency?: string;
   mobileMenuType?: "drawer" | "fullscreen" | "dropdown";
   hidden?: boolean;
+  badge?: string;
+  searchPlaceholder?: string;
+  utilityLinks?: LinkRef[];
+  tagline?: string;
+  statusText?: string;
+  statusColor?: "green" | "blue" | "orange" | "purple" | string;
+  menuLabel?: string;
+  contactLabel?: string;
+  contactEmail?: string;
+  featured?: {
+    badge?: string;
+    title: string;
+    description?: string;
+    link?: LinkRef;
+  };
 };
 
 export type FooterNewsletter = {
@@ -329,6 +392,17 @@ export type HeroTrustedBy = {
   logos?: { label: string; url?: string }[];
 };
 
+export type CarouselSlide = {
+  title: string;
+  subtitle?: string;
+  description?: string;
+  caption?: string;
+  badge?: string;
+  image?: ImageRef;
+  button?: LinkRef;
+  secondaryButton?: LinkRef;
+};
+
 export type HeroData = {
   variant: (typeof HERO_VARIANTS)[number];
   eyebrow?: string;
@@ -362,6 +436,11 @@ export type HeroData = {
   rating?: HeroRating;
   floatingCards?: HeroFloatingCard[];
   trustedBy?: HeroTrustedBy;
+  carouselSpeed?: number;
+  carouselDirection?: "left-to-right" | "right-to-left";
+  showDoodles?: boolean;
+  curveIntensity?: "none" | "subtle" | "medium" | "dramatic";
+  carouselSlides?: CarouselSlide[];
 };
 
 export type SectionDataMap = {
@@ -572,21 +651,13 @@ export type SectionDataMap = {
       | "minimal-editorial"
       | "image-gallery"
       | "image-strip"
-      | "image-coverflow";
+      | "image-coverflow"
+      | "curved-banner";
     eyebrow?: string;
     heading?: string;
     intro?: string;
     badge?: string;
-    slides: {
-      title: string;
-      subtitle?: string;
-      description?: string;
-      caption?: string;
-      badge?: string;
-      image?: ImageRef;
-      button?: LinkRef;
-      secondaryButton?: LinkRef;
-    }[];
+    slides: CarouselSlide[];
     autoPlay?: boolean;
     interval?: number;
     showArrows?: boolean;
@@ -622,6 +693,91 @@ export type SectionDataMap = {
     pauseOnHover?: boolean;
     gradientFades?: boolean;
     fontSize?: "small" | "medium" | "large" | "huge";
+  };
+  auth: {
+    variant: (typeof AUTH_VARIANTS)[number];
+    defaultView?: (typeof AUTH_VIEWS)[number];
+    brandName?: string;
+    logo?: ImageRef;
+    formPosition?: "left" | "right";
+    minHeight?: "auto" | "screen";
+    inputStyle?: "outline" | "filled" | "underline" | "pill";
+    buttonShape?: "rounded" | "pill" | "square";
+    headingSize?: "sm" | "md" | "lg";
+    showLabels?: boolean;
+    showFieldIcons?: boolean;
+    showPasswordToggle?: boolean;
+    animation?: (typeof AUTH_ANIMATIONS)[number];
+    backgroundMotion?: boolean;
+    colors?: { accent?: string; panel?: string; panelText?: string; card?: string };
+    panel?: {
+      eyebrow?: string;
+      heading?: string;
+      text?: string;
+      registerHeading?: string;
+      registerText?: string;
+      image?: ImageRef;
+      highlights?: string[];
+      testimonial?: { quote: string; name: string; role?: string; avatar?: ImageRef };
+      stats?: { value: string; label: string }[];
+    };
+    social: {
+      enabled: boolean;
+      label?: string;
+      style?: "icons" | "full";
+      position?: "top" | "bottom";
+      showOnRegister?: boolean;
+      providers: { provider: (typeof AUTH_SOCIAL_PROVIDERS)[number]; href: string }[];
+    };
+    login: {
+      heading: string;
+      subheading?: string;
+      fields: AuthField[];
+      submitLabel: string;
+      showRemember?: boolean;
+      rememberLabel?: string;
+      forgotLabel?: string;
+      switchPrompt?: string;
+      switchLabel?: string;
+    };
+    register: {
+      enabled: boolean;
+      heading: string;
+      subheading?: string;
+      fields: AuthField[];
+      submitLabel: string;
+      showTerms?: boolean;
+      termsText?: string;
+      termsLink?: LinkRef;
+      switchPrompt?: string;
+      switchLabel?: string;
+    };
+    forgot: {
+      enabled: boolean;
+      heading: string;
+      subheading?: string;
+      fields: AuthField[];
+      submitLabel: string;
+      backLabel?: string;
+      successHeading?: string;
+      successText?: string;
+    };
+    otp: {
+      enabled: boolean;
+      heading: string;
+      subheading?: string;
+      length: 4 | 5 | 6;
+      submitLabel: string;
+      resendLabel?: string;
+      resendSeconds?: number;
+      requireOnLogin?: boolean;
+      requireOnRegister?: boolean;
+      requireOnForgot?: boolean;
+    };
+    successHeading?: string;
+    successText?: string;
+    successLink?: LinkRef;
+    footerNote?: string;
   };
   custom: {
     width?: "contained" | "wide";

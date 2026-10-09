@@ -1,5 +1,10 @@
 import Joi from "joi";
 import {
+  AUTH_ANIMATIONS,
+  AUTH_FIELD_TYPES,
+  AUTH_SOCIAL_PROVIDERS,
+  AUTH_VARIANTS,
+  AUTH_VIEWS,
   BUTTON_STYLES,
   CARD_STYLES,
   CUSTOM_ALIGNS,
@@ -98,6 +103,17 @@ const image = Joi.object({
 
 const color = Joi.string().pattern(HEX_COLOR).required().messages({ "string.pattern.base": "Use a #rrggbb color" });
 
+const carouselSlide = Joi.object({
+  title: text(120).required(),
+  subtitle: optionalText(120),
+  description: optionalText(600),
+  caption: optionalText(300),
+  badge: optionalText(60),
+  image: image.optional(),
+  button: link.optional(),
+  secondaryButton: link.optional(),
+});
+
 /** Deepest container nesting (1 = flat list of leaf blocks) and total block count. */
 export function measureCustomBlocks(blocks: readonly CustomBlock[]): { depth: number; count: number } {
   let depth = 0;
@@ -185,6 +201,154 @@ export const customDataSchema = Joi.object({
   });
 const columns = Joi.number().valid(1, 2, 3, 4);
 
+const authField = Joi.object({
+  name: Joi.string()
+    .pattern(/^[A-Za-z][\w-]{0,39}$/)
+    .required()
+    .messages({ "string.pattern.base": "Field names start with a letter and use letters, numbers, - or _" }),
+  label: text(80).required(),
+  type: Joi.string()
+    .valid(...AUTH_FIELD_TYPES)
+    .required(),
+  placeholder: optionalText(120),
+  required: Joi.boolean().optional(),
+  width: Joi.string().valid("full", "half").optional(),
+  options: Joi.array().items(text(80)).max(20).optional(),
+});
+const authFields = Joi.array().items(authField).max(12).required();
+
+const authDataSchema = Joi.object({
+  variant: flexibleVariant(AUTH_VARIANTS, "diagonal-split"),
+  defaultView: Joi.string()
+    .valid(...AUTH_VIEWS)
+    .optional(),
+  brandName: optionalText(60),
+  logo: image.optional(),
+  formPosition: Joi.string().valid("left", "right").optional(),
+  minHeight: Joi.string().valid("auto", "screen").optional(),
+  inputStyle: Joi.string().valid("outline", "filled", "underline", "pill").optional(),
+  buttonShape: Joi.string().valid("rounded", "pill", "square").optional(),
+  headingSize: Joi.string().valid("sm", "md", "lg").optional(),
+  showLabels: Joi.boolean().optional(),
+  showFieldIcons: Joi.boolean().optional(),
+  showPasswordToggle: Joi.boolean().optional(),
+  animation: Joi.string()
+    .valid(...AUTH_ANIMATIONS)
+    .optional(),
+  backgroundMotion: Joi.boolean().optional(),
+  colors: Joi.object({
+    accent: color.optional(),
+    panel: color.optional(),
+    panelText: color.optional(),
+    card: color.optional(),
+  }).optional(),
+  panel: Joi.object({
+    eyebrow: optionalText(80),
+    heading: optionalText(160),
+    text: optionalText(400),
+    registerHeading: optionalText(160),
+    registerText: optionalText(400),
+    image: image.optional(),
+    highlights: Joi.array().items(text(120)).max(6).optional(),
+    testimonial: Joi.object({
+      quote: text(300).required(),
+      name: text(80).required(),
+      role: optionalText(120),
+      avatar: image.optional(),
+    }).optional(),
+    stats: Joi.array()
+      .items(Joi.object({ value: text(20).required(), label: text(80).required() }))
+      .max(4)
+      .optional(),
+  }).optional(),
+  social: Joi.object({
+    enabled: Joi.boolean().required(),
+    label: optionalText(60),
+    style: Joi.string().valid("icons", "full").optional(),
+    position: Joi.string().valid("top", "bottom").optional(),
+    showOnRegister: Joi.boolean().optional(),
+    providers: Joi.array()
+      .items(
+        Joi.object({
+          provider: Joi.string()
+            .valid(...AUTH_SOCIAL_PROVIDERS)
+            .required(),
+          href: text(2048)
+            .pattern(SAFE_HREF)
+            .required()
+            .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
+        }),
+      )
+      .max(AUTH_SOCIAL_PROVIDERS.length)
+      .required(),
+  }).required(),
+  login: Joi.object({
+    heading: text(120).required(),
+    subheading: optionalText(300),
+    fields: authFields,
+    submitLabel: text(60).required(),
+    showRemember: Joi.boolean().optional(),
+    rememberLabel: optionalText(60),
+    forgotLabel: optionalText(60),
+    switchPrompt: optionalText(80),
+    switchLabel: optionalText(40),
+  }).required(),
+  register: Joi.object({
+    enabled: Joi.boolean().required(),
+    heading: text(120).required(),
+    subheading: optionalText(300),
+    fields: authFields,
+    submitLabel: text(60).required(),
+    showTerms: Joi.boolean().optional(),
+    termsText: optionalText(120),
+    termsLink: link.optional(),
+    switchPrompt: optionalText(80),
+    switchLabel: optionalText(40),
+  }).required(),
+  forgot: Joi.object({
+    enabled: Joi.boolean().required(),
+    heading: text(120).required(),
+    subheading: optionalText(300),
+    fields: Joi.array().items(authField).max(4).required(),
+    submitLabel: text(60).required(),
+    backLabel: optionalText(60),
+    successHeading: optionalText(120),
+    successText: optionalText(300),
+  }).required(),
+  otp: Joi.object({
+    enabled: Joi.boolean().required(),
+    heading: text(120).required(),
+    subheading: optionalText(300),
+    length: Joi.number().valid(4, 5, 6).required(),
+    submitLabel: text(60).required(),
+    resendLabel: optionalText(40),
+    resendSeconds: Joi.number().integer().min(0).max(300).optional(),
+    requireOnLogin: Joi.boolean().optional(),
+    requireOnRegister: Joi.boolean().optional(),
+    requireOnForgot: Joi.boolean().optional(),
+  }).required(),
+  successHeading: optionalText(120),
+  successText: optionalText(300),
+  successLink: link.optional(),
+  footerNote: optionalText(160),
+});
+
+function flexibleVariant<T extends string>(
+  validVariants: readonly T[],
+  defaultVariant: T,
+  aliasMap: Record<string, T> = {},
+) {
+  return Joi.string()
+    .custom((value) => {
+      if (!value) return defaultVariant;
+      if (aliasMap[value]) return aliasMap[value];
+      if ((validVariants as readonly string[]).includes(value)) return value;
+      return defaultVariant;
+    })
+    .default(defaultVariant)
+    .optional();
+}
+
 export const themeSchema = Joi.object({
   colors: Joi.object({
     primary: color,
@@ -218,11 +382,18 @@ export const themeSchema = Joi.object({
 });
 
 export const headerSchema = Joi.object({
-  design: Joi.string()
-    .valid(...HEADER_DESIGNS)
-    .default("logo-left")
-    .optional()
-    .description('"transparent" = a see-through header laid over the top of the first section (e.g. its background photo); only when position is "static" and sticky is false'),
+  design: flexibleVariant(HEADER_DESIGNS, "logo-left", {
+    "logo_left": "logo-left",
+    "center": "centered",
+    "dock": "glass-dock",
+    "stacked": "split-stacked",
+    "search": "command-bar",
+    "bento": "mega-menu-grid",
+    "drawer": "side-drawer",
+    "ticker": "headline-ticker",
+    "editorial": "luxury-editorial",
+    "console": "saas-console",
+  }).description('"transparent" = a see-through header laid over the top of the first section (e.g. its background photo); only when position is "static" and sticky is false'),
   siteName: text(120).default("Brand").optional(),
   logo: image.optional(),
   menu: Joi.array().items(menuItem).max(24).default([]).optional(),
@@ -245,13 +416,19 @@ export const headerSchema = Joi.object({
   currency: optionalText(10),
   mobileMenuType: Joi.string().valid("drawer", "fullscreen", "dropdown").optional(),
   hidden: Joi.boolean().optional(),
+  badge: optionalText(60),
+  searchPlaceholder: optionalText(100),
+  utilityLinks: Joi.array().items(link).max(8).optional(),
+  tagline: optionalText(120),
+  statusText: optionalText(80),
+  statusColor: Joi.string().valid("green", "blue", "orange", "purple").optional(),
 });
 
 export const footerSchema = Joi.object({
-  design: Joi.string()
-    .valid(...FOOTER_DESIGNS)
-    .default("columns")
-    .optional(),
+  design: flexibleVariant(FOOTER_DESIGNS, "columns", {
+    "col": "columns",
+    "simple-footer": "simple",
+  }),
   siteName: text(120).required(),
   logo: image.optional(),
   tagline: optionalText(200),
@@ -294,10 +471,10 @@ export const footerSchema = Joi.object({
 });
 
 export const heroSchema = Joi.object({
-  variant: Joi.string()
-    .valid(...HERO_VARIANTS)
-    .default("centered")
-    .optional(),
+  variant: flexibleVariant(HERO_VARIANTS, "centered", {
+    "split-screen": "split",
+    "cards": "floating-cards",
+  }),
   eyebrow: optionalText(200),
   badgeIcon: optionalText(50),
   heading: optionalText(200),
@@ -371,6 +548,11 @@ export const heroSchema = Joi.object({
   })
     .optional()
     .meta(locked),
+  carouselSpeed: Joi.number().min(5).max(200).optional(),
+  carouselDirection: Joi.string().valid("left-to-right", "right-to-left").optional(),
+  showDoodles: Joi.boolean().optional(),
+  curveIntensity: Joi.string().valid("none", "subtle", "medium", "dramatic").optional(),
+  carouselSlides: Joi.array().items(carouselSlide).max(20).optional(),
 });
 
 const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
@@ -381,7 +563,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     eyebrow: optionalText(100),
     heading: text(200).required(),
     intro: optionalText(500),
-    variant: Joi.string().valid("grid", "split", "pastel-icons", "minimal", "cards").optional(),
+    variant: flexibleVariant(
+      ["grid", "split", "pastel-icons", "minimal", "cards"],
+      "grid",
+      { "cards-grid": "cards", "icons": "pastel-icons" },
+    ),
     iconStyle: Joi.string().valid("pastel-circle", "square-badge", "minimal-accent", "colored-circle", "none").optional(),
     cardStyle: Joi.string().valid("transparent", "surface", "bordered", "glass").optional(),
     align: Joi.string().valid("left", "center").optional(),
@@ -412,16 +598,18 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     heading: text(200).required(),
     eyebrow: optionalText(100),
     intro: optionalText(500),
-    variant: Joi.string()
-      .valid(
+    variant: flexibleVariant(
+      [
         "cards-grid",
         "bento-grid",
         "split-showcase",
         "interactive-list",
         "horizontal-cards",
         "minimal-numbered",
-      )
-      .optional(),
+      ],
+      "cards-grid",
+      { "bento": "bento-grid", "cards": "cards-grid", "split": "split-showcase" },
+    ),
     cardStyle: Joi.string()
       .valid("surface", "bordered", "flat", "glass", "glow", "elevated", "gradient")
       .optional(),
@@ -475,9 +663,17 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   faq: Joi.object({
-    variant: Joi.string()
-      .valid("accordion-classic", "two-column-grid", "split-sidebar", "minimal-numbered", "categorized-cards")
-      .optional(),
+    variant: flexibleVariant(
+      [
+        "accordion-classic",
+        "two-column-grid",
+        "split-sidebar",
+        "minimal-numbered",
+        "categorized-cards",
+      ],
+      "accordion-classic",
+      { "accordion": "accordion-classic", "grid": "two-column-grid", "split": "split-sidebar", "minimal": "minimal-numbered" },
+    ),
     eyebrow: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
@@ -504,9 +700,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   cta: Joi.object({
-    variant: Joi.string()
-      .valid("centered-card", "split-visual", "floating-card", "minimal-editorial")
-      .optional(),
+    variant: flexibleVariant(
+      ["centered-card", "split-visual", "floating-card", "minimal-editorial"],
+      "centered-card",
+      { "centered": "centered-card", "split": "split-visual", "floating": "floating-card", "minimal": "minimal-editorial" },
+    ),
     eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
@@ -524,9 +722,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     align: Joi.string().valid("left", "center").optional(),
   }),
   contact: Joi.object({
-    variant: Joi.string()
-      .valid("split-form", "cards-hub", "minimal-editorial", "floating-glass")
-      .optional(),
+    variant: flexibleVariant(
+      ["split-form", "cards-hub", "minimal-editorial", "floating-glass"],
+      "split-form",
+      { "split": "split-form", "cards": "cards-hub", "minimal": "minimal-editorial", "floating": "floating-glass" },
+    ),
     eyebrow: optionalText(80),
     heading: text(200).required(),
     text: optionalText(500),
@@ -589,9 +789,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   pricing: Joi.object({
-    variant: Joi.string()
-      .valid("cards-grid", "minimal-monochrome", "spotlight-tier", "horizontal-rows")
-      .optional(),
+    variant: flexibleVariant(
+      ["cards-grid", "minimal-monochrome", "spotlight-tier", "horizontal-rows"],
+      "cards-grid",
+      { "cards": "cards-grid", "minimal": "minimal-monochrome", "spotlight": "spotlight-tier", "horizontal": "horizontal-rows" },
+    ),
     eyebrow: optionalText(80),
     heading: text(200).required(),
     intro: optionalText(500),
@@ -637,9 +839,11 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     width: Joi.string().valid("contained", "wide").required(),
   }),
   team: Joi.object({
-    variant: Joi.string()
-      .valid("grid-cards", "spotlight-featured", "minimal-editorial", "glass-overlay")
-      .optional(),
+    variant: flexibleVariant(
+      ["grid-cards", "spotlight-featured", "minimal-editorial", "glass-overlay"],
+      "grid-cards",
+      { "grid": "grid-cards", "spotlight": "spotlight-featured", "minimal": "minimal-editorial", "glass": "glass-overlay" },
+    ),
     eyebrow: optionalText(80),
     badge: optionalText(80),
     heading: text(200).required(),
@@ -682,8 +886,8 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
       .required(),
   }),
   carousel: Joi.object({
-    variant: Joi.string()
-      .valid(
+    variant: flexibleVariant(
+      [
         "cards",
         "hero-slider",
         "showcase",
@@ -691,25 +895,17 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
         "image-gallery",
         "image-strip",
         "image-coverflow",
-      )
-      .optional(),
+        "curved-banner",
+      ],
+      "cards",
+      { "hero": "hero-slider", "gallery": "image-gallery", "strip": "image-strip", "coverflow": "image-coverflow" },
+    ),
     eyebrow: optionalText(80),
     heading: optionalText(200),
     intro: optionalText(500),
     badge: optionalText(80),
     slides: Joi.array()
-      .items(
-        Joi.object({
-          title: text(120).required(),
-          subtitle: optionalText(120),
-          description: optionalText(600),
-          caption: optionalText(300),
-          badge: optionalText(60),
-          image: image.optional(),
-          button: link.optional(),
-          secondaryButton: link.optional(),
-        }),
-      )
+      .items(carouselSlide)
       .min(1)
       .max(12)
       .required(),
@@ -727,9 +923,20 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     align: Joi.string().valid("left", "center").optional(),
   }),
   marquee: Joi.object({
-    variant: Joi.string()
-      .valid("ticker-text", "cards-stream", "pill-badges", "dual-directional")
-      .optional(),
+    variant: flexibleVariant(
+      ["ticker-text", "cards-stream", "pill-badges", "dual-directional"],
+      "ticker-text",
+      {
+        "gradient-pill": "pill-badges",
+        "pills": "pill-badges",
+        "badges": "pill-badges",
+        "cards": "cards-stream",
+        "features": "cards-stream",
+        "dual": "dual-directional",
+        "two-way": "dual-directional",
+        "ticker": "ticker-text",
+      },
+    ),
     eyebrow: optionalText(80),
     heading: optionalText(200),
     intro: optionalText(500),
@@ -764,6 +971,7 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     gradientFades: Joi.boolean().optional(),
     fontSize: Joi.string().valid("small", "medium", "large", "huge").optional(),
   }),
+  auth: authDataSchema,
   custom: customDataSchema,
 };
 
