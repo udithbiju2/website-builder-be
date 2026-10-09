@@ -1,6 +1,10 @@
 import Joi from "joi";
 import {
-  BRAND_DISPLAY_MODES,
+  AUTH_ANIMATIONS,
+  AUTH_FIELD_TYPES,
+  AUTH_SOCIAL_PROVIDERS,
+  AUTH_VARIANTS,
+  AUTH_VIEWS,
   BUTTON_STYLES,
   CARD_STYLES,
   CUSTOM_ALIGNS,
@@ -65,7 +69,6 @@ const menuItem = Joi.object({
     .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
   badge: optionalText(30),
   icon: optionalText(40),
-  description: optionalText(140),
   children: Joi.array().items(subMenuItem).max(24).optional(),
 });
 
@@ -167,6 +170,138 @@ export const customDataSchema = Joi.object({
   });
 const columns = Joi.number().valid(1, 2, 3, 4);
 
+const authField = Joi.object({
+  name: Joi.string()
+    .pattern(/^[A-Za-z][\w-]{0,39}$/)
+    .required()
+    .messages({ "string.pattern.base": "Field names start with a letter and use letters, numbers, - or _" }),
+  label: text(80).required(),
+  type: Joi.string()
+    .valid(...AUTH_FIELD_TYPES)
+    .required(),
+  placeholder: optionalText(120),
+  required: Joi.boolean().optional(),
+  width: Joi.string().valid("full", "half").optional(),
+  options: Joi.array().items(text(80)).max(20).optional(),
+});
+const authFields = Joi.array().items(authField).max(12).required();
+
+const authDataSchema = Joi.object({
+  variant: flexibleVariant(AUTH_VARIANTS, "diagonal-split"),
+  defaultView: Joi.string()
+    .valid(...AUTH_VIEWS)
+    .optional(),
+  brandName: optionalText(60),
+  logo: image.optional(),
+  formPosition: Joi.string().valid("left", "right").optional(),
+  minHeight: Joi.string().valid("auto", "screen").optional(),
+  inputStyle: Joi.string().valid("outline", "filled", "underline", "pill").optional(),
+  buttonShape: Joi.string().valid("rounded", "pill", "square").optional(),
+  headingSize: Joi.string().valid("sm", "md", "lg").optional(),
+  showLabels: Joi.boolean().optional(),
+  showFieldIcons: Joi.boolean().optional(),
+  showPasswordToggle: Joi.boolean().optional(),
+  animation: Joi.string()
+    .valid(...AUTH_ANIMATIONS)
+    .optional(),
+  backgroundMotion: Joi.boolean().optional(),
+  colors: Joi.object({
+    accent: color.optional(),
+    panel: color.optional(),
+    panelText: color.optional(),
+    card: color.optional(),
+  }).optional(),
+  panel: Joi.object({
+    eyebrow: optionalText(80),
+    heading: optionalText(160),
+    text: optionalText(400),
+    registerHeading: optionalText(160),
+    registerText: optionalText(400),
+    image: image.optional(),
+    highlights: Joi.array().items(text(120)).max(6).optional(),
+    testimonial: Joi.object({
+      quote: text(300).required(),
+      name: text(80).required(),
+      role: optionalText(120),
+      avatar: image.optional(),
+    }).optional(),
+    stats: Joi.array()
+      .items(Joi.object({ value: text(20).required(), label: text(80).required() }))
+      .max(4)
+      .optional(),
+  }).optional(),
+  social: Joi.object({
+    enabled: Joi.boolean().required(),
+    label: optionalText(60),
+    style: Joi.string().valid("icons", "full").optional(),
+    position: Joi.string().valid("top", "bottom").optional(),
+    showOnRegister: Joi.boolean().optional(),
+    providers: Joi.array()
+      .items(
+        Joi.object({
+          provider: Joi.string()
+            .valid(...AUTH_SOCIAL_PROVIDERS)
+            .required(),
+          href: text(2048)
+            .pattern(SAFE_HREF)
+            .required()
+            .messages({ "string.pattern.base": "Links must be http(s), mailto:, tel:, a /path or a #anchor" }),
+        }),
+      )
+      .max(AUTH_SOCIAL_PROVIDERS.length)
+      .required(),
+  }).required(),
+  login: Joi.object({
+    heading: text(120).required(),
+    subheading: optionalText(300),
+    fields: authFields,
+    submitLabel: text(60).required(),
+    showRemember: Joi.boolean().optional(),
+    rememberLabel: optionalText(60),
+    forgotLabel: optionalText(60),
+    switchPrompt: optionalText(80),
+    switchLabel: optionalText(40),
+  }).required(),
+  register: Joi.object({
+    enabled: Joi.boolean().required(),
+    heading: text(120).required(),
+    subheading: optionalText(300),
+    fields: authFields,
+    submitLabel: text(60).required(),
+    showTerms: Joi.boolean().optional(),
+    termsText: optionalText(120),
+    termsLink: link.optional(),
+    switchPrompt: optionalText(80),
+    switchLabel: optionalText(40),
+  }).required(),
+  forgot: Joi.object({
+    enabled: Joi.boolean().required(),
+    heading: text(120).required(),
+    subheading: optionalText(300),
+    fields: Joi.array().items(authField).max(4).required(),
+    submitLabel: text(60).required(),
+    backLabel: optionalText(60),
+    successHeading: optionalText(120),
+    successText: optionalText(300),
+  }).required(),
+  otp: Joi.object({
+    enabled: Joi.boolean().required(),
+    heading: text(120).required(),
+    subheading: optionalText(300),
+    length: Joi.number().valid(4, 5, 6).required(),
+    submitLabel: text(60).required(),
+    resendLabel: optionalText(40),
+    resendSeconds: Joi.number().integer().min(0).max(300).optional(),
+    requireOnLogin: Joi.boolean().optional(),
+    requireOnRegister: Joi.boolean().optional(),
+    requireOnForgot: Joi.boolean().optional(),
+  }).required(),
+  successHeading: optionalText(120),
+  successText: optionalText(300),
+  successLink: link.optional(),
+  footerNote: optionalText(160),
+});
+
 function flexibleVariant<T extends string>(
   validVariants: readonly T[],
   defaultVariant: T,
@@ -230,9 +365,6 @@ export const headerSchema = Joi.object({
   }),
   siteName: text(120).default("Brand").optional(),
   logo: image.optional(),
-  logoDisplay: Joi.string()
-    .valid(...BRAND_DISPLAY_MODES)
-    .optional(),
   menu: Joi.array().items(menuItem).max(24).default([]).optional(),
   cta: link.optional(),
   secondaryCta: link.optional(),
@@ -253,16 +385,7 @@ export const headerSchema = Joi.object({
   utilityLinks: Joi.array().items(link).max(8).optional(),
   tagline: optionalText(120),
   statusText: optionalText(80),
-  statusColor: optionalText(50),
-  menuLabel: optionalText(30),
-  contactLabel: optionalText(60),
-  contactEmail: Joi.string().trim().email().max(255).allow("").optional(),
-  featured: Joi.object({
-    badge: optionalText(30),
-    title: text(80).required(),
-    description: optionalText(200),
-    link: link.optional(),
-  }).optional(),
+  statusColor: Joi.string().valid("green", "blue", "orange", "purple").optional(),
 });
 
 export const footerSchema = Joi.object({
@@ -798,6 +921,7 @@ const SECTION_DATA: Record<SectionType, Joi.ObjectSchema> = {
     gradientFades: Joi.boolean().optional(),
     fontSize: Joi.string().valid("small", "medium", "large", "huge").optional(),
   }),
+  auth: authDataSchema,
   custom: customDataSchema,
 };
 

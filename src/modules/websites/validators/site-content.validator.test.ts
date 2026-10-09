@@ -106,6 +106,36 @@ describe("sectionSchema", () => {
     const text = section("text", { body: "a" });
     assert.ok(sectionsSchema.validate([text, text]).error);
   });
+
+  describe("auth sections", () => {
+    const view = { heading: "Log in", submitLabel: "Log in", fields: [{ name: "email", label: "Email", type: "email", required: true }] };
+    const auth = (overrides: Record<string, unknown> = {}) =>
+      section("auth", {
+        variant: "glass-aurora",
+        defaultView: "login",
+        social: { enabled: true, providers: [{ provider: "google", href: "https://accounts.example.com/oauth" }] },
+        login: view,
+        register: { ...view, enabled: true, termsLink: { label: "Terms", href: "/terms" } },
+        forgot: { ...view, enabled: false },
+        otp: { enabled: true, heading: "Verify", submitLabel: "Verify", length: 6, requireOnRegister: true },
+        colors: { accent: "#7c3aed" },
+        ...overrides,
+      });
+
+    it("accepts a configured login flow and normalizes unknown variants", () => {
+      assert.equal(sectionSchema.validate(auth()).error, undefined);
+      assert.equal(sectionSchema.validate(auth({ variant: "retro" })).value.data.variant, "diagonal-split");
+    });
+
+    it("rejects unsafe colors, links and field names", () => {
+      assert.ok(sectionSchema.validate(auth({ colors: { accent: "red;}" } })).error);
+      assert.ok(
+        sectionSchema.validate(auth({ social: { enabled: true, providers: [{ provider: "google", href: "javascript:alert(1)" }] } })).error,
+      );
+      assert.ok(sectionSchema.validate(auth({ login: { ...view, fields: [{ name: "1 bad", label: "x", type: "text" }] } })).error);
+      assert.ok(sectionSchema.validate(auth({ otp: { enabled: true, heading: "V", submitLabel: "V", length: 9 } })).error);
+    });
+  });
 });
 
 describe("savePageContentSchema", () => {
